@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { githubSyncJob } = vi.hoisted(() => ({
+const { githubSyncJob, redis } = vi.hoisted(() => ({
 	githubSyncJob: {
 		findUnique: vi.fn(),
+		findMany: vi.fn(),
 		create: vi.fn(),
 		updateMany: vi.fn(),
+	},
+	redis: {
+		get: vi.fn(),
 	},
 }));
 
@@ -13,7 +17,7 @@ vi.mock("./db", () => ({
 }));
 
 vi.mock("./redis", () => ({
-	redis: {},
+	redis,
 }));
 
 describe("enqueueGithubSyncJob", () => {
@@ -21,8 +25,10 @@ describe("enqueueGithubSyncJob", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-06-23T18:00:00.000Z"));
 		githubSyncJob.findUnique.mockReset();
+		githubSyncJob.findMany.mockReset();
 		githubSyncJob.create.mockReset();
 		githubSyncJob.updateMany.mockReset();
+		redis.get.mockReset();
 	});
 
 	afterEach(() => {
@@ -121,5 +127,84 @@ describe("enqueueGithubSyncJob", () => {
 				owner: "owner",
 			}),
 		).resolves.toBeUndefined();
+	});
+});
+
+describe("cache and sync job status helpers", () => {
+	beforeEach(() => {
+		githubSyncJob.findMany.mockReset();
+		redis.get.mockReset();
+	});
+
+	it("returns only the syncedAt timestamp for a cache entry", async () => {
+		redis.get.mockResolvedValue({
+			data: { ok: true },
+			syncedAt: "2026-06-23T18:00:00.000Z",
+			etag: null,
+		});
+
+		const { getGithubCacheEntrySyncedAt } = await import("./github-sync-store");
+
+		await expect(
+			getGithubCacheEntrySyncedAt("user-1", "repo:owner/repo"),
+		).resolves.toBe("2026-06-23T18:00:00.000Z");
+		expect(redis.get).toHaveBeenCalledWith("gh:user-1:repo:owner/repo");
+	});
+
+	it("summarizes sync job counts and failed rows", async () => {
+		githubSyncJob.findMany.mockResolvedValue([
+			{
+				id: 1,
+				dedupeKey: "repo:owner/repo",
+				jobType: "repo",
+				status: "pending",
+				attempts: 0,
+				lastError: null,
+				updatedAt: "2026-06-23T18:00:00.000Z",
+			},
+			{
+				id: 2,
+				dedupeKey: "repo_events:owner/repo:30",
+				jobType: "repo_events",
+				status: "failed",
+				attempts: 8,
+				lastError: "rate limited",
+				updatedAt: "2026-06-23T18:01:00.000Z",
+			},
+		]);
+
+		const { getGithubSyncJobStatusSummary } = await import("./github-sync-store");
+
+		await expect(
+			getGithubSyncJobStatusSummary("user-1", {
+				dedupeKeyContains: "owner/repo",
+				failedLimit: 5,
+			}),
+		).resolves.toEqual({
+			counts: { pending: 1, running: 0, failed: 1 },
+			failed: [
+				{
+					id: 2,
+					dedupeKey: "repo_events:owner/repo:30",
+					jobType: "repo_events",
+					attempts: 8,
+					lastError: "rate limited",
+					updatedAt: "2026-06-23T18:01:00.000Z",
+				},
+			],
+		});
+		expect(githubSyncJob.findMany).toHaveBeenCalledWith({
+			where: { userId: "user-1", dedupeKey: { contains: "owner/repo" } },
+			select: {
+				id: true,
+				dedupeKey: true,
+				jobType: true,
+				status: true,
+				attempts: true,
+				lastError: true,
+				updatedAt: true,
+			},
+			orderBy: [{ status: "asc" }, { updatedAt: "desc" }, { id: "asc" }],
+		});
 	});
 });

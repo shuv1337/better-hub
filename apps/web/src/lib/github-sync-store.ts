@@ -38,6 +38,14 @@ export async function getGithubCacheEntry<T>(
 	return entry ?? null;
 }
 
+export async function getGithubCacheEntrySyncedAt(
+	userId: string,
+	cacheKey: string,
+): Promise<string | null> {
+	const entry = await getGithubCacheEntry<unknown>(userId, cacheKey);
+	return entry?.syncedAt ?? null;
+}
+
 export async function upsertGithubCacheEntry<T>(
 	userId: string,
 	cacheKey: string,
@@ -274,4 +282,70 @@ export async function markGithubSyncJobFailed(id: number, attempts: number, erro
 			updatedAt: nowIso,
 		},
 	});
+}
+
+export interface GithubSyncJobStatusSummary {
+	counts: Record<GithubSyncJobStatus, number>;
+	failed: Array<{
+		id: number;
+		dedupeKey: string;
+		jobType: string;
+		attempts: number;
+		lastError: string | null;
+		updatedAt: string;
+	}>;
+}
+
+export async function getGithubSyncJobStatusSummary(
+	userId: string,
+	options: { dedupeKeyContains?: string; failedLimit?: number } = {},
+): Promise<GithubSyncJobStatusSummary> {
+	const where = {
+		userId,
+		...(options.dedupeKeyContains
+			? { dedupeKey: { contains: options.dedupeKeyContains } }
+			: {}),
+	};
+	const rows = await prisma.githubSyncJob.findMany({
+		where,
+		select: {
+			id: true,
+			dedupeKey: true,
+			jobType: true,
+			status: true,
+			attempts: true,
+			lastError: true,
+			updatedAt: true,
+		},
+		orderBy: [{ status: "asc" }, { updatedAt: "desc" }, { id: "asc" }],
+	});
+	const counts: Record<GithubSyncJobStatus, number> = {
+		pending: 0,
+		running: 0,
+		failed: 0,
+	};
+	const failedLimit = options.failedLimit ?? 10;
+	const failed: GithubSyncJobStatusSummary["failed"] = [];
+
+	for (const row of rows) {
+		if (
+			row.status === "pending" ||
+			row.status === "running" ||
+			row.status === "failed"
+		) {
+			counts[row.status] += 1;
+		}
+		if (row.status === "failed" && failed.length < failedLimit) {
+			failed.push({
+				id: row.id,
+				dedupeKey: row.dedupeKey,
+				jobType: row.jobType,
+				attempts: row.attempts,
+				lastError: row.lastError,
+				updatedAt: row.updatedAt,
+			});
+		}
+	}
+
+	return { counts, failed };
 }
