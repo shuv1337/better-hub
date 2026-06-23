@@ -1,4 +1,5 @@
 import { redis } from "./redis";
+import { githubCacheKeys } from "./github-cache-descriptors";
 
 /** TTLs in seconds */
 const TTL = {
@@ -14,12 +15,8 @@ function repoKey(owner: string, repo: string, suffix: string): string {
 	return `${suffix}:${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }
 
-function userRepoKey(userId: string, owner: string, repo: string, suffix: string): string {
-	return `${suffix}:${userId}:${owner.toLowerCase()}/${repo.toLowerCase()}`;
-}
-
 function languagesKey(owner: string, repo: string): string {
-	return repoKey(owner, repo, "repo_languages");
+	return githubCacheKeys.repoLanguages(owner, repo);
 }
 
 function contributorAvatarsKey(owner: string, repo: string): string {
@@ -27,11 +24,11 @@ function contributorAvatarsKey(owner: string, repo: string): string {
 }
 
 function branchesKey(owner: string, repo: string): string {
-	return repoKey(owner, repo, "repo_branches");
+	return githubCacheKeys.repoBranches(owner, repo);
 }
 
 function tagsKey(owner: string, repo: string): string {
-	return repoKey(owner, repo, "repo_tags");
+	return githubCacheKeys.repoTags(owner, repo);
 }
 
 export async function getCachedRepoLanguages(
@@ -110,7 +107,7 @@ export async function getCachedRepoPageData<T>(
 	owner: string,
 	repo: string,
 ): Promise<T | null> {
-	return redis.get<T>(userRepoKey(userId, owner, repo, "repo_page_data"));
+	return redis.get<T>(githubCacheKeys.repoPageData(userId, owner, repo));
 }
 
 export async function setCachedRepoPageData<T>(
@@ -119,7 +116,7 @@ export async function setCachedRepoPageData<T>(
 	repo: string,
 	data: T,
 ): Promise<void> {
-	await redis.set(userRepoKey(userId, owner, repo, "repo_page_data"), data, {
+	await redis.set(githubCacheKeys.repoPageData(userId, owner, repo), data, {
 		ex: TTL.medium,
 	});
 }
@@ -130,7 +127,7 @@ export async function updateCachedRepoPageDataNavCounts(
 	repo: string,
 	updates: { openPrs?: number; openIssues?: number },
 ): Promise<void> {
-	const key = userRepoKey(userId, owner, repo, "repo_page_data");
+	const key = githubCacheKeys.repoPageData(userId, owner, repo);
 	const existing = await redis.get<{
 		navCounts?: { openPrs: number; openIssues: number; activeRuns: number };
 	}>(key);
@@ -146,17 +143,17 @@ export async function updateCachedRepoPageDataNavCounts(
 }
 
 export async function getCachedRepoTree<T>(owner: string, repo: string): Promise<T | null> {
-	return redis.get<T>(repoKey(owner, repo, "repo_file_tree"));
+	return redis.get<T>(githubCacheKeys.repoFileTree(owner, repo));
 }
 
 export async function setCachedRepoTree<T>(owner: string, repo: string, tree: T): Promise<void> {
-	await redis.set(repoKey(owner, repo, "repo_file_tree"), tree, { ex: TTL.medium });
+	await redis.set(githubCacheKeys.repoFileTree(owner, repo), tree, { ex: TTL.medium });
 }
 
 // --- Overview caches (shared across all viewers) ---
 
 export async function getCachedOverviewPRs<T>(owner: string, repo: string): Promise<T[] | null> {
-	return redis.get<T[]>(repoKey(owner, repo, "overview_prs"));
+	return redis.get<T[]>(githubCacheKeys.overviewPRs(owner, repo));
 }
 
 export async function setCachedOverviewPRs<T>(
@@ -164,11 +161,11 @@ export async function setCachedOverviewPRs<T>(
 	repo: string,
 	data: T[],
 ): Promise<void> {
-	await redis.set(repoKey(owner, repo, "overview_prs"), data, { ex: TTL.fast });
+	await redis.set(githubCacheKeys.overviewPRs(owner, repo), data, { ex: TTL.fast });
 }
 
 export async function getCachedOverviewIssues<T>(owner: string, repo: string): Promise<T[] | null> {
-	return redis.get<T[]>(repoKey(owner, repo, "overview_issues"));
+	return redis.get<T[]>(githubCacheKeys.overviewIssues(owner, repo));
 }
 
 export async function setCachedOverviewIssues<T>(
@@ -176,11 +173,11 @@ export async function setCachedOverviewIssues<T>(
 	repo: string,
 	data: T[],
 ): Promise<void> {
-	await redis.set(repoKey(owner, repo, "overview_issues"), data, { ex: TTL.fast });
+	await redis.set(githubCacheKeys.overviewIssues(owner, repo), data, { ex: TTL.fast });
 }
 
 export async function getCachedOverviewEvents<T>(owner: string, repo: string): Promise<T[] | null> {
-	return redis.get<T[]>(repoKey(owner, repo, "overview_events"));
+	return redis.get<T[]>(githubCacheKeys.overviewEvents(owner, repo));
 }
 
 export async function setCachedOverviewEvents<T>(
@@ -188,14 +185,14 @@ export async function setCachedOverviewEvents<T>(
 	repo: string,
 	data: T[],
 ): Promise<void> {
-	await redis.set(repoKey(owner, repo, "overview_events"), data, { ex: TTL.fast });
+	await redis.set(githubCacheKeys.overviewEvents(owner, repo), data, { ex: TTL.fast });
 }
 
 export async function getCachedOverviewCommitActivity<T>(
 	owner: string,
 	repo: string,
 ): Promise<T[] | null> {
-	return redis.get<T[]>(repoKey(owner, repo, "overview_commit_activity"));
+	return redis.get<T[]>(githubCacheKeys.overviewCommitActivity(owner, repo));
 }
 
 export async function setCachedOverviewCommitActivity<T>(
@@ -203,15 +200,17 @@ export async function setCachedOverviewCommitActivity<T>(
 	repo: string,
 	data: T[],
 ): Promise<void> {
-	await redis.set(repoKey(owner, repo, "overview_commit_activity"), data, { ex: TTL.fast });
+	await redis.set(githubCacheKeys.overviewCommitActivity(owner, repo), data, {
+		ex: TTL.fast,
+	});
 }
 
 export async function getCachedOverviewCI<T>(owner: string, repo: string): Promise<T | null> {
-	return redis.get<T>(repoKey(owner, repo, "overview_ci"));
+	return redis.get<T>(githubCacheKeys.overviewCI(owner, repo));
 }
 
 export async function setCachedOverviewCI<T>(owner: string, repo: string, data: T): Promise<void> {
-	await redis.set(repoKey(owner, repo, "overview_ci"), data, { ex: TTL.fast });
+	await redis.set(githubCacheKeys.overviewCI(owner, repo), data, { ex: TTL.fast });
 }
 
 // --- Author dossier cache (per author per repo) ---

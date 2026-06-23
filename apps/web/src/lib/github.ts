@@ -19,6 +19,11 @@ import {
 import { redis } from "./redis";
 import { computeContributorScore } from "./contributor-score";
 import { getCachedAuthorDossier, setCachedAuthorDossier } from "./repo-data-cache";
+import {
+	githubCacheKeyPart,
+	githubCacheKeys,
+	normalizeGithubRepoKey,
+} from "./github-cache-descriptors";
 import { isShareableCacheType, isSharedCacheReadEnabled } from "./github-cache-policy";
 
 export type RepoPermissions = {
@@ -228,24 +233,20 @@ function normalizeRef(ref?: string): string {
 	return value ? value : "";
 }
 
-function normalizePath(path: string): string {
-	return path.replace(/^\/+/, "").replace(/\/+$/, "");
-}
-
 function normalizeRepoKey(owner: string, repo: string): string {
-	return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
+	return normalizeGithubRepoKey(owner, repo);
 }
 
 function keyPart(value: string): string {
-	return encodeURIComponent(value === "" ? "~" : value);
+	return githubCacheKeyPart(value);
 }
 
 function buildUserReposCacheKey(sort: RepoSort, perPage: number): string {
-	return `user_repos:${sort}:${perPage}`;
+	return githubCacheKeys.userRepos(sort, perPage);
 }
 
 function buildRepoCacheKey(owner: string, repo: string): string {
-	return `repo:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repo(owner, repo);
 }
 
 function buildRepoContentsCacheKey(
@@ -254,9 +255,7 @@ function buildRepoContentsCacheKey(
 	path: string,
 	ref?: string,
 ): string {
-	return `repo_contents:${normalizeRepoKey(owner, repo)}:${keyPart(
-		normalizeRef(ref),
-	)}:${keyPart(normalizePath(path))}`;
+	return githubCacheKeys.repoContents(owner, repo, path, ref);
 }
 
 function buildRepoTreeCacheKey(
@@ -265,43 +264,39 @@ function buildRepoTreeCacheKey(
 	treeSha: string,
 	recursive: boolean,
 ): string {
-	return `repo_tree:${normalizeRepoKey(owner, repo)}:${keyPart(
-		treeSha,
-	)}:${recursive ? "1" : "0"}`;
+	return githubCacheKeys.repoTree(owner, repo, treeSha, recursive);
 }
 
 function buildRepoBranchesCacheKey(owner: string, repo: string): string {
-	return `repo_branches:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repoBranches(owner, repo);
 }
 
 function buildRepoTagsCacheKey(owner: string, repo: string): string {
-	return `repo_tags:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repoTags(owner, repo);
 }
 
 function buildRepoReleasesCacheKey(owner: string, repo: string): string {
-	return `repo_releases:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repoReleases(owner, repo);
 }
 
 function buildFileContentCacheKey(owner: string, repo: string, path: string, ref?: string): string {
-	return `file_content:${normalizeRepoKey(owner, repo)}:${keyPart(
-		normalizeRef(ref),
-	)}:${keyPart(normalizePath(path))}`;
+	return githubCacheKeys.fileContent(owner, repo, path, ref);
 }
 
 function buildRepoReadmeCacheKey(owner: string, repo: string, ref?: string): string {
-	return `repo_readme:${normalizeRepoKey(owner, repo)}:${keyPart(normalizeRef(ref))}`;
+	return githubCacheKeys.repoReadme(owner, repo, ref);
 }
 
 function buildAuthenticatedUserCacheKey(): string {
-	return "authenticated_user";
+	return githubCacheKeys.authenticatedUser();
 }
 
 function buildUserOrgsCacheKey(perPage: number): string {
-	return `user_orgs:${perPage}`;
+	return githubCacheKeys.userOrgs(perPage);
 }
 
 function buildOrgCacheKey(org: string): string {
-	return `org:${org.toLowerCase()}`;
+	return githubCacheKeys.org(org);
 }
 
 function buildOrgReposCacheKey(
@@ -310,117 +305,117 @@ function buildOrgReposCacheKey(
 	type: OrgRepoType,
 	perPage: number,
 ): string {
-	return `org_repos:${org.toLowerCase()}:${sort}:${type}:${perPage}`;
+	return githubCacheKeys.orgRepos(org, sort, type, perPage);
 }
 
 function buildNotificationsCacheKey(perPage: number): string {
-	return `notifications:${perPage}`;
+	return githubCacheKeys.notifications(perPage);
 }
 
 function buildSearchIssuesCacheKey(query: string, perPage: number): string {
-	return `search_issues:${keyPart(query)}:${perPage}`;
+	return githubCacheKeys.searchIssues(query, perPage);
 }
 
 function buildUserEventsCacheKey(username: string, perPage: number): string {
-	return `user_events:${username.toLowerCase()}:${perPage}`;
+	return githubCacheKeys.userEvents(username, perPage);
 }
 
 function buildStarredReposCacheKey(perPage: number): string {
-	return `starred_repos:${perPage}`;
+	return githubCacheKeys.starredRepos(perPage);
 }
 
 function buildContributionsCacheKey(username: string): string {
-	return `contributions:v3:${username.toLowerCase()}`;
+	return githubCacheKeys.contributions(username);
 }
 
 function buildTrendingReposCacheKey(since: string, perPage: number, language?: string): string {
-	return `trending_repos:${since}:${perPage}:${keyPart(language ?? "")}`;
+	return githubCacheKeys.trendingRepos(since, perPage, language);
 }
 
 function buildRepoIssuesCacheKey(owner: string, repo: string, state: string): string {
-	return `repo_issues:${normalizeRepoKey(owner, repo)}:${state}`;
+	return githubCacheKeys.repoIssues(owner, repo, state);
 }
 
 function buildRepoPullRequestsCacheKey(owner: string, repo: string, state: string): string {
-	return `repo_pull_requests:${normalizeRepoKey(owner, repo)}:${state}`;
+	return githubCacheKeys.repoPullRequests(owner, repo, state);
 }
 
 function buildIssueCacheKey(owner: string, repo: string, issueNumber: number): string {
-	return `issue:${normalizeRepoKey(owner, repo)}:${issueNumber}`;
+	return githubCacheKeys.issue(owner, repo, issueNumber);
 }
 
 function buildIssueCommentsCacheKey(owner: string, repo: string, issueNumber: number): string {
-	return `issue_comments:${normalizeRepoKey(owner, repo)}:${issueNumber}`;
+	return githubCacheKeys.issueComments(owner, repo, issueNumber);
 }
 
 function buildPullRequestCacheKey(owner: string, repo: string, pullNumber: number): string {
-	return `pull_request:${normalizeRepoKey(owner, repo)}:${pullNumber}`;
+	return githubCacheKeys.pullRequest(owner, repo, pullNumber);
 }
 
 function buildPullRequestFilesCacheKey(owner: string, repo: string, pullNumber: number): string {
-	return `pull_request_files:${normalizeRepoKey(owner, repo)}:${pullNumber}`;
+	return githubCacheKeys.pullRequestFiles(owner, repo, pullNumber);
 }
 
 function buildPullRequestCommentsCacheKey(owner: string, repo: string, pullNumber: number): string {
-	return `pull_request_comments:${normalizeRepoKey(owner, repo)}:${pullNumber}`;
+	return githubCacheKeys.pullRequestComments(owner, repo, pullNumber);
 }
 
 function buildPullRequestReviewsCacheKey(owner: string, repo: string, pullNumber: number): string {
-	return `pull_request_reviews:${normalizeRepoKey(owner, repo)}:${pullNumber}`;
+	return githubCacheKeys.pullRequestReviews(owner, repo, pullNumber);
 }
 
 function buildPullRequestCommitsCacheKey(owner: string, repo: string, pullNumber: number): string {
-	return `pull_request_commits:${normalizeRepoKey(owner, repo)}:${pullNumber}`;
+	return githubCacheKeys.pullRequestCommits(owner, repo, pullNumber);
 }
 
 function buildRepoContributorsCacheKey(owner: string, repo: string, perPage: number): string {
-	return `repo_contributors:${normalizeRepoKey(owner, repo)}:${perPage}`;
+	return githubCacheKeys.repoContributors(owner, repo, perPage);
 }
 
 function buildUserProfileCacheKey(username: string): string {
-	return `user_profile:${username.toLowerCase()}`;
+	return githubCacheKeys.userProfile(username);
 }
 
 function buildUserPublicReposCacheKey(username: string, perPage: number): string {
-	return `user_public_repos:${username.toLowerCase()}:${perPage}`;
+	return githubCacheKeys.userPublicRepos(username, perPage);
 }
 
 function buildUserPublicOrgsCacheKey(username: string): string {
-	return `user_public_orgs:${username.toLowerCase()}`;
+	return githubCacheKeys.userPublicOrgs(username);
 }
 
 function buildRepoWorkflowsCacheKey(owner: string, repo: string): string {
-	return `repo_workflows:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repoWorkflows(owner, repo);
 }
 
 function buildRepoWorkflowRunsCacheKey(owner: string, repo: string, perPage: number): string {
-	return `repo_workflow_runs:${normalizeRepoKey(owner, repo)}:${perPage}`;
+	return githubCacheKeys.repoWorkflowRuns(owner, repo, perPage);
 }
 
 function buildRepoNavCountsCacheKey(owner: string, repo: string): string {
-	return `repo_nav_counts:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repoNavCounts(owner, repo);
 }
 
 function buildRepoLanguagesCacheKey(owner: string, repo: string): string {
-	return `repo_languages:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repoLanguages(owner, repo);
 }
 
 function buildOrgMembersCacheKey(org: string, perPage: number): string {
-	return `org_members:${org.toLowerCase()}:${perPage}`;
+	return githubCacheKeys.orgMembers(org, perPage);
 }
 
 function buildPersonRepoActivityCacheKey(owner: string, repo: string, username: string): string {
-	return `person_repo_activity:${normalizeRepoKey(owner, repo)}:${username.toLowerCase()}`;
+	return githubCacheKeys.personRepoActivity(owner, repo, username);
 }
 
 function buildPRBundleCacheKey(owner: string, repo: string, pullNumber: number): string {
-	return `pr_bundle:${normalizeRepoKey(owner, repo)}:${pullNumber}`;
+	return githubCacheKeys.prBundle(owner, repo, pullNumber);
 }
 
 const DEFAULT_BRANCH_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 function defaultBranchRedisKey(owner: string, repo: string): string {
-	return `repo_default_branch:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.defaultBranch(owner, repo);
 }
 
 export async function getCachedDefaultBranch(owner: string, repo: string): Promise<string | null> {
@@ -4583,7 +4578,7 @@ async function fetchDiscussionDetailGraphQL(
 // ── Discussion exported functions ──
 
 function buildRepoDiscussionsCacheKey(owner: string, repo: string): string {
-	return `repo_discussions:v2:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repoDiscussions(owner, repo);
 }
 
 export async function getRepoDiscussionsPage(
@@ -5062,7 +5057,7 @@ export async function getRepoIssuesWithStats(
 }
 
 function buildRepoIssuesPageCacheKey(owner: string, repo: string): string {
-	return `repo_issues_page:${normalizeRepoKey(owner, repo)}`;
+	return githubCacheKeys.repoIssuesPage(owner, repo);
 }
 
 export async function getRepoIssuesPage(owner: string, repo: string): Promise<RepoIssuesPageData> {
