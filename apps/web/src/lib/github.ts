@@ -23,7 +23,11 @@ import {
 	normalizeGithubRepoKey,
 } from "./github-cache-descriptors";
 import { getRequestGitHubAuthContext, type GitHubAuthContext } from "./github-auth-context";
-import { isShareableCacheType, isSharedCacheReadEnabled } from "./github-cache-policy";
+import {
+	isShareableCacheType,
+	isSharedCacheReadEnabled,
+	shouldRefresh,
+} from "./github-cache-policy";
 
 export type RepoPermissions = {
 	admin: boolean;
@@ -6965,17 +6969,40 @@ export const getRepoPageData = cache(
 		const authCtx = await getGitHubAuthContext();
 		if (!authCtx) return { success: false, error: "Not authenticated" };
 
-		const { getCachedRepoPageData } = await import("@/lib/repo-data-cache-vc");
-		const cached = await getCachedRepoPageData<RepoPageData>(
+		const { getCachedRepoPageDataEntry } = await import("@/lib/repo-data-cache-vc");
+		const cached = await getCachedRepoPageDataEntry<RepoPageData>(
 			authCtx.userId,
 			owner,
 			repo,
 		);
-		if (cached) return { success: true, data: cached };
+		if (cached) {
+			if (shouldRefresh(cached.syncedAt, "repo-chrome")) {
+				scheduleRepoPageDataRefresh(authCtx, owner, repo);
+			}
+			return { success: true, data: cached.data };
+		}
 
 		return fetchAndCacheRepoPageData(owner, repo);
 	},
 );
+
+function scheduleRepoPageDataRefresh(
+	authCtx: GitHubAuthContext,
+	owner: string,
+	repo: string,
+): void {
+	void (async () => {
+		const { tryAcquireRepoPageRefreshLock } = await import("@/lib/repo-data-cache");
+		const acquired = await tryAcquireRepoPageRefreshLock(authCtx.userId, owner, repo);
+		if (!acquired) return;
+		await fetchAndCacheRepoPageDataWithAuth(authCtx, owner, repo);
+	})().catch((error) => {
+		console.error(
+			`[getRepoPageData] Background refresh failed for ${owner}/${repo}:`,
+			error,
+		);
+	});
+}
 
 export async function fetchAndCacheRepoPageDataWithAuth(
 	authCtx: GitHubAuthContext,

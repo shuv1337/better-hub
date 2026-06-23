@@ -2,6 +2,7 @@ import { revalidateTag } from "next/cache";
 
 export {
 	getCachedRepoPageData,
+	getCachedRepoPageDataEntry,
 	getCachedRepoTree,
 	getCachedBranches,
 	getCachedTags,
@@ -12,7 +13,10 @@ export {
 	getCachedOverviewEvents,
 	getCachedOverviewCommitActivity,
 	getCachedOverviewCI,
+	tryAcquireRepoPageRefreshLock,
 	updateCachedRepoPageDataNavCounts,
+	type RepoPageDataCacheEntry,
+	type RepoPageDataEnvelope,
 	type ContributorAvatarsData,
 	type BranchRef,
 } from "./repo-data-cache";

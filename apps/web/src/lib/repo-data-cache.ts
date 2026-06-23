@@ -11,6 +11,15 @@ const TTL = {
 	fast: 5 * 60, // 5 minutes
 } as const;
 
+const REPO_PAGE_REFRESH_LOCK_TTL_SECONDS = 2 * 60;
+
+export type RepoPageDataEnvelope<T> = { v: 2; syncedAt: string; data: T } | T;
+
+export interface RepoPageDataCacheEntry<T> {
+	data: T;
+	syncedAt: string | null;
+}
+
 function repoKey(owner: string, repo: string, suffix: string): string {
 	return `${suffix}:${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }
@@ -29,6 +38,33 @@ function branchesKey(owner: string, repo: string): string {
 
 function tagsKey(owner: string, repo: string): string {
 	return githubCacheKeys.repoTags(owner, repo);
+}
+
+function repoPageRefreshLockKey(userId: string, owner: string, repo: string): string {
+	return `repo-page-refresh-lock:${userId}:${owner.toLowerCase()}/${repo.toLowerCase()}`;
+}
+
+function isRepoPageDataV2Envelope<T>(
+	value: RepoPageDataEnvelope<T> | null,
+): value is { v: 2; syncedAt: string; data: T } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		!Array.isArray(value) &&
+		(value as { v?: unknown }).v === 2 &&
+		typeof (value as { syncedAt?: unknown }).syncedAt === "string" &&
+		"data" in value
+	);
+}
+
+function unwrapRepoPageDataEntry<T>(
+	value: RepoPageDataEnvelope<T> | null,
+): RepoPageDataCacheEntry<T> | null {
+	if (!value) return null;
+	if (isRepoPageDataV2Envelope(value)) {
+		return { data: value.data, syncedAt: value.syncedAt };
+	}
+	return { data: value as T, syncedAt: null };
 }
 
 export async function getCachedRepoLanguages(
@@ -107,7 +143,19 @@ export async function getCachedRepoPageData<T>(
 	owner: string,
 	repo: string,
 ): Promise<T | null> {
-	return redis.get<T>(githubCacheKeys.repoPageData(userId, owner, repo));
+	const entry = await getCachedRepoPageDataEntry<T>(userId, owner, repo);
+	return entry?.data ?? null;
+}
+
+export async function getCachedRepoPageDataEntry<T>(
+	userId: string,
+	owner: string,
+	repo: string,
+): Promise<RepoPageDataCacheEntry<T> | null> {
+	const value = await redis.get<RepoPageDataEnvelope<T>>(
+		githubCacheKeys.repoPageData(userId, owner, repo),
+	);
+	return unwrapRepoPageDataEntry(value);
 }
 
 export async function setCachedRepoPageData<T>(
@@ -116,9 +164,21 @@ export async function setCachedRepoPageData<T>(
 	repo: string,
 	data: T,
 ): Promise<void> {
-	await redis.set(githubCacheKeys.repoPageData(userId, owner, repo), data, {
-		ex: TTL.medium,
+	const envelope = { v: 2 as const, syncedAt: new Date().toISOString(), data };
+	await redis.set(githubCacheKeys.repoPageData(userId, owner, repo), envelope);
+}
+
+export async function tryAcquireRepoPageRefreshLock(
+	userId: string,
+	owner: string,
+	repo: string,
+	ttlSeconds = REPO_PAGE_REFRESH_LOCK_TTL_SECONDS,
+): Promise<boolean> {
+	const result = await redis.set(repoPageRefreshLockKey(userId, owner, repo), "1", {
+		ex: ttlSeconds,
+		nx: true,
 	});
+	return result === "OK";
 }
 
 export async function updateCachedRepoPageDataNavCounts(
@@ -128,9 +188,18 @@ export async function updateCachedRepoPageDataNavCounts(
 	updates: { openPrs?: number; openIssues?: number },
 ): Promise<void> {
 	const key = githubCacheKeys.repoPageData(userId, owner, repo);
-	const existing = await redis.get<{
-		navCounts?: { openPrs: number; openIssues: number; activeRuns: number };
-	}>(key);
+	const existingEntry = unwrapRepoPageDataEntry(
+		await redis.get<
+			RepoPageDataEnvelope<{
+				navCounts?: {
+					openPrs: number;
+					openIssues: number;
+					activeRuns: number;
+				};
+			}>
+		>(key),
+	);
+	const existing = existingEntry?.data;
 	if (!existing || !existing.navCounts) return;
 
 	const updatedNavCounts = {
@@ -139,7 +208,11 @@ export async function updateCachedRepoPageDataNavCounts(
 		...(updates.openIssues !== undefined && { openIssues: updates.openIssues }),
 	};
 
-	await redis.set(key, { ...existing, navCounts: updatedNavCounts }, { ex: TTL.medium });
+	await redis.set(key, {
+		v: 2 as const,
+		syncedAt: existingEntry.syncedAt ?? new Date().toISOString(),
+		data: { ...existing, navCounts: updatedNavCounts },
+	});
 }
 
 export async function getCachedRepoTree<T>(owner: string, repo: string): Promise<T | null> {
