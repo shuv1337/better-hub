@@ -18,6 +18,7 @@ import { MutationEventProvider } from "@/components/shared/mutation-event-provid
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { OnboardingOverlay } from "@/components/onboarding/onboarding-overlay";
+import { GithubCacheWarmer } from "./github-cache-warmer";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
 	const session = await getServerSession();
@@ -69,6 +70,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 							<GitHubLinkInterceptor>
 								<TooltipProvider>
 									<NavigationProgress />
+									{process.env
+										.NEXT_PUBLIC_GITHUB_CACHE_WARM_ENABLED ===
+										"1" && (
+										<GithubCacheWarmer />
+									)}
 									<NavVisibilityProvider>
 										<div className="flex flex-col h-dvh overflow-y-auto lg:overflow-hidden">
 											<AppNavbar
