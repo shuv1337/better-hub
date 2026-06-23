@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { getRequestGitHubAuthContext } from "@/lib/github-auth-context";
+import { resolveGitHubAuthContextForUser } from "@/lib/github-auth-context";
 import {
 	acquireGithubCacheWarmLock,
 	releaseGithubCacheWarmLock,
@@ -45,10 +45,7 @@ function withWarmDefaults(options: GithubCacheWarmOptions): GithubCacheWarmOptio
 }
 
 function isInlineWarmEnabled(): boolean {
-	return (
-		process.env.GITHUB_CACHE_WARM_INLINE === "1" ||
-		process.env.NODE_ENV !== "production"
-	);
+	return process.env.GITHUB_CACHE_WARM_INLINE === "1";
 }
 
 function isProductionWarmEnabled(): boolean {
@@ -91,8 +88,8 @@ async function warmInline(params: {
 }): Promise<Response> {
 	const run = makeRun(params.runId, params.lockKey, "api-inline");
 	try {
-		const authCtx = await getRequestGitHubAuthContext();
-		if (!authCtx || authCtx.userId !== params.userId) {
+		const authCtx = await resolveGitHubAuthContextForUser(params.userId);
+		if (!authCtx) {
 			const result = createGithubCacheWarmSkippedResult({
 				userId: params.userId,
 				run,

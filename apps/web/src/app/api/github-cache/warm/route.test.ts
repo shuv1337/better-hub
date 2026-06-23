@@ -13,7 +13,7 @@ const authModule = vi.hoisted(() => ({
 }));
 
 const githubAuthContext = vi.hoisted(() => ({
-	getRequestGitHubAuthContext: vi.fn(),
+	resolveGitHubAuthContextForUser: vi.fn(),
 }));
 
 const githubCacheLock = vi.hoisted(() => ({
@@ -65,7 +65,7 @@ describe("github cache warm API route", () => {
 	beforeEach(() => {
 		nextHeaders.headers.mockReset();
 		authModule.auth.api.getSession.mockReset();
-		githubAuthContext.getRequestGitHubAuthContext.mockReset();
+		githubAuthContext.resolveGitHubAuthContextForUser.mockReset();
 		for (const helper of Object.values(githubCacheLock)) helper.mockReset();
 		for (const helper of Object.values(githubCacheWarmer)) helper.mockReset();
 		inngestModule.inngest.send.mockReset();
@@ -106,6 +106,61 @@ describe("github cache warm API route", () => {
 		expect(githubCacheLock.releaseGithubCacheWarmLock).toHaveBeenCalledWith(
 			"user-1",
 			"run-1",
+		);
+	});
+
+	it("does not run inline just because NODE_ENV is not production", async () => {
+		emitRandomUuid("run-2");
+		vi.stubEnv("NODE_ENV", "development");
+		vi.stubEnv("GITHUB_CACHE_WARM_INLINE", "0");
+		inngestModule.inngest.send.mockResolvedValue({});
+
+		const { POST } = await import("./route");
+		const response = await POST(warmRequest({ mode: "quick", maxRepos: 5 }));
+
+		expect(response.status).toBe(200);
+		expect(githubAuthContext.resolveGitHubAuthContextForUser).not.toHaveBeenCalled();
+		expect(githubCacheWarmer.warmPersonalGithubCache).not.toHaveBeenCalled();
+		expect(inngestModule.inngest.send).toHaveBeenCalledWith(
+			expect.objectContaining({
+				name: "github/cache.warm",
+				data: expect.objectContaining({ runId: "run-2" }),
+			}),
+		);
+	});
+
+	it("uses the background auth resolver for explicit inline warm", async () => {
+		emitRandomUuid("run-3");
+		vi.stubEnv("GITHUB_CACHE_WARM_INLINE", "1");
+		const authCtx = { userId: "user-1", token: "token" };
+		githubAuthContext.resolveGitHubAuthContextForUser.mockResolvedValue(authCtx);
+		githubCacheWarmer.warmPersonalGithubCache.mockResolvedValue({
+			userId: "user-1",
+			runId: "run-3",
+			source: "api-inline",
+			discoveredRepos: 0,
+			selectedRepos: 0,
+			warmedRepos: 0,
+			skippedRepos: 0,
+			failedRepos: 0,
+			jobsQueued: 0,
+			durationMs: 1,
+			errors: [],
+		});
+
+		const { POST } = await import("./route");
+		const response = await POST(warmRequest({ mode: "quick", maxRepos: 5 }));
+
+		expect(response.status).toBe(200);
+		expect(githubAuthContext.resolveGitHubAuthContextForUser).toHaveBeenCalledWith(
+			"user-1",
+		);
+		expect(githubCacheWarmer.warmPersonalGithubCache).toHaveBeenCalledWith(
+			expect.objectContaining({ authCtx }),
+		);
+		expect(githubCacheLock.releaseGithubCacheWarmLock).toHaveBeenCalledWith(
+			"user-1",
+			"run-3",
 		);
 	});
 });

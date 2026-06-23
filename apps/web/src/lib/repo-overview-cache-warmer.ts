@@ -18,7 +18,7 @@ import {
 } from "./github";
 import type { GitHubAuthContext } from "./github-auth-context";
 import { redis } from "./redis";
-import { getCachedReadmeHtml, setCachedReadmeHtml } from "./readme-cache";
+import { deleteCachedReadmeHtml, getCachedReadmeHtml, setCachedReadmeHtml } from "./readme-cache";
 import {
 	setCachedBranches,
 	setCachedContributorAvatars,
@@ -87,6 +87,21 @@ function readmeRefreshLockKey(owner: string, repo: string): string {
 	return `readme-html-refresh-lock:${owner.toLowerCase()}/${repo.toLowerCase()}`;
 }
 
+class RepoReadmeNotFoundError extends Error {
+	constructor() {
+		super("Repository README was not found");
+		this.name = "RepoReadmeNotFoundError";
+	}
+}
+
+function isNotFoundError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		(error as { status?: unknown }).status === 404
+	);
+}
+
 async function tryAcquireReadmeRefreshLock(owner: string, repo: string): Promise<boolean> {
 	const result = await redis.set(readmeRefreshLockKey(owner, repo), "1", {
 		ex: README_REFRESH_LOCK_TTL_SECONDS,
@@ -106,7 +121,8 @@ async function fetchReadmeMarkdownFromGitHub(
 	try {
 		const { data } = await octokit.repos.getReadme({ owner, repo, ref: branch });
 		return Buffer.from(data.content, "base64").toString("utf-8");
-	} catch {
+	} catch (error) {
+		if (isNotFoundError(error)) throw new RepoReadmeNotFoundError();
 		return null;
 	}
 }
@@ -118,10 +134,19 @@ async function refreshReadmeHtml(
 	authCtx?: GitHubAuthContext | null,
 	forceFreshFromGitHub = false,
 ): Promise<string | null> {
-	const markdown = forceFreshFromGitHub
-		? await fetchReadmeMarkdownFromGitHub(owner, repo, branch, authCtx)
-		: ((await getRepoReadme(owner, repo, branch, authOverride(authCtx)))?.content ??
-			null);
+	let markdown: string | null = null;
+	try {
+		markdown = forceFreshFromGitHub
+			? await fetchReadmeMarkdownFromGitHub(owner, repo, branch, authCtx)
+			: ((await getRepoReadme(owner, repo, branch, authOverride(authCtx)))
+					?.content ?? null);
+	} catch (error) {
+		if (error instanceof RepoReadmeNotFoundError) {
+			await deleteCachedReadmeHtml(owner, repo);
+			return null;
+		}
+		throw error;
+	}
 	if (!markdown) return null;
 
 	const html = await renderMarkdownToHtml(markdown, { owner, repo, branch });
@@ -136,9 +161,14 @@ function scheduleReadmeRefresh(
 	authCtx?: GitHubAuthContext | null,
 ): void {
 	void (async () => {
-		const acquired = await tryAcquireReadmeRefreshLock(owner, repo);
-		if (!acquired) return;
-		await refreshReadmeHtml(owner, repo, branch, authCtx, true);
+		let acquired = false;
+		try {
+			acquired = await tryAcquireReadmeRefreshLock(owner, repo);
+			if (!acquired) return;
+			await refreshReadmeHtml(owner, repo, branch, authCtx, true);
+		} finally {
+			if (acquired) await redis.del(readmeRefreshLockKey(owner, repo));
+		}
 	})().catch((error) => {
 		console.error(
 			`[getRepoReadmeHtmlCacheFirst] Background refresh failed for ${owner}/${repo}:`,

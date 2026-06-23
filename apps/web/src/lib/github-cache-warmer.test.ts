@@ -23,12 +23,37 @@ const overviewWarmers = vi.hoisted(() => ({
 }));
 
 const githubCacheLock = vi.hoisted(() => ({
-	isGithubCacheWarmLockHeld: vi.fn(),
+	renewGithubCacheWarmLock: vi.fn(),
+}));
+
+const repoDataCache = vi.hoisted(() => ({
+	getCachedBranches: vi.fn(),
+	getCachedContributorAvatars: vi.fn(),
+	getCachedOverviewCI: vi.fn(),
+	getCachedOverviewCommitActivity: vi.fn(),
+	getCachedOverviewEvents: vi.fn(),
+	getCachedOverviewIssues: vi.fn(),
+	getCachedOverviewPRs: vi.fn(),
+	getCachedRepoLanguages: vi.fn(),
+	getCachedRepoPageDataEntry: vi.fn(),
+	getCachedRepoTree: vi.fn(),
+	getCachedTags: vi.fn(),
+}));
+
+const readmeCache = vi.hoisted(() => ({
+	getCachedReadmeHtml: vi.fn(),
+}));
+
+const syncStore = vi.hoisted(() => ({
+	getGithubCacheEntrySyncedAt: vi.fn(),
 }));
 
 vi.mock("./github", () => github);
 vi.mock("./repo-overview-cache-warmer", () => overviewWarmers);
 vi.mock("./github-cache-lock", () => githubCacheLock);
+vi.mock("./repo-data-cache", () => repoDataCache);
+vi.mock("./readme-cache", () => readmeCache);
+vi.mock("./github-sync-store", () => syncStore);
 
 const authCtx = {
 	userId: "user-1",
@@ -55,8 +80,14 @@ describe("github-cache-warmer", () => {
 	beforeEach(() => {
 		for (const helper of Object.values(github)) helper.mockReset();
 		for (const helper of Object.values(overviewWarmers)) helper.mockReset();
-		githubCacheLock.isGithubCacheWarmLockHeld.mockReset();
-		githubCacheLock.isGithubCacheWarmLockHeld.mockResolvedValue(true);
+		for (const helper of Object.values(repoDataCache)) helper.mockReset();
+		readmeCache.getCachedReadmeHtml.mockReset();
+		syncStore.getGithubCacheEntrySyncedAt.mockReset();
+		githubCacheLock.renewGithubCacheWarmLock.mockReset();
+		githubCacheLock.renewGithubCacheWarmLock.mockResolvedValue(true);
+		for (const helper of Object.values(repoDataCache)) helper.mockResolvedValue(null);
+		readmeCache.getCachedReadmeHtml.mockResolvedValue(null);
+		syncStore.getGithubCacheEntrySyncedAt.mockResolvedValue(null);
 		vi.spyOn(console, "info").mockImplementation(() => {});
 	});
 
@@ -220,7 +251,7 @@ describe("github-cache-warmer", () => {
 	});
 
 	it("returns lock-lost when the run lock no longer belongs to the run", async () => {
-		githubCacheLock.isGithubCacheWarmLockHeld.mockResolvedValue(false);
+		githubCacheLock.renewGithubCacheWarmLock.mockResolvedValue(false);
 
 		const { warmPersonalGithubCache } = await import("./github-cache-warmer");
 		const result = await warmPersonalGithubCache({
@@ -236,5 +267,59 @@ describe("github-cache-warmer", () => {
 
 		expect(result.skippedReason).toBe("lock-lost");
 		expect(github.getUserRepos).not.toHaveBeenCalled();
+	});
+
+	it("honors refreshStaleOnly by reusing fresh repo page data and skipping fresh stage caches", async () => {
+		github.getUserRepos.mockResolvedValue([repo({})]);
+		github.getUserOrgs.mockResolvedValue([]);
+		repoDataCache.getCachedRepoPageDataEntry.mockResolvedValue({
+			data: {
+				repoData: {
+					default_branch: "main",
+					size: 1,
+					has_discussions: false,
+				},
+				languages: {},
+			},
+			syncedAt: new Date().toISOString(),
+		});
+		repoDataCache.getCachedRepoTree.mockResolvedValue([{ path: "README.md" }]);
+		repoDataCache.getCachedRepoLanguages.mockResolvedValue({});
+		repoDataCache.getCachedBranches.mockResolvedValue([{ name: "main" }]);
+		repoDataCache.getCachedTags.mockResolvedValue([]);
+		repoDataCache.getCachedContributorAvatars.mockResolvedValue({
+			avatars: [],
+			totalCount: 0,
+		});
+		readmeCache.getCachedReadmeHtml.mockResolvedValue("<h1>Cached</h1>");
+		repoDataCache.getCachedOverviewPRs.mockResolvedValue([]);
+		repoDataCache.getCachedOverviewIssues.mockResolvedValue([]);
+		repoDataCache.getCachedOverviewEvents.mockResolvedValue([]);
+		repoDataCache.getCachedOverviewCI.mockResolvedValue({});
+		syncStore.getGithubCacheEntrySyncedAt.mockResolvedValue(new Date().toISOString());
+
+		const { warmPersonalGithubCache } = await import("./github-cache-warmer");
+		const result = await warmPersonalGithubCache({
+			authCtx,
+			options: {
+				mode: "quick",
+				maxRepos: 1,
+				maxConcurrentRepos: 1,
+				refreshStaleOnly: true,
+			},
+			run: {
+				runId: "run-1",
+				source: "script",
+				lockKey: "lock",
+				lockAlreadyHeld: true,
+			},
+		});
+
+		expect(result.warmedRepos).toBe(1);
+		expect(github.fetchAndCacheRepoPageDataWithAuth).not.toHaveBeenCalled();
+		expect(overviewWarmers.warmRepoFileTreeForLayout).not.toHaveBeenCalled();
+		expect(overviewWarmers.warmLayoutMetadataQuick).not.toHaveBeenCalled();
+		expect(overviewWarmers.getRepoReadmeHtmlCacheFirst).not.toHaveBeenCalled();
+		expect(github.getRepoWorkflowRuns).not.toHaveBeenCalled();
 	});
 });

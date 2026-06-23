@@ -18,6 +18,7 @@ import { redis } from "./redis";
 import { computeContributorScore } from "./contributor-score";
 import { getCachedAuthorDossier, setCachedAuthorDossier } from "./repo-data-cache";
 import {
+	getGithubCacheDescriptor,
 	githubCacheKeyPart,
 	githubCacheKeys,
 	normalizeGithubRepoKey,
@@ -2431,6 +2432,12 @@ async function enqueueGitDataSync(
 	triggerGitDataSyncDrain(authCtx);
 }
 
+function shouldQueueGitDataSync(cacheType: string, syncedAt: string | null): boolean {
+	const descriptor = getGithubCacheDescriptor(cacheType);
+	if (!descriptor) return true;
+	return shouldRefresh(syncedAt, descriptor.dataClass);
+}
+
 async function readLocalFirstGitData<T>({
 	authCtx,
 	cacheKey,
@@ -2459,7 +2466,9 @@ async function readLocalFirstGitData<T>({
 
 	const cached = await getGithubCacheEntry<T>(authCtx.userId, cacheKey);
 	if (cached) {
-		await enqueueGitDataSync(authCtx, jobType, cacheKey, jobPayload);
+		if (shouldQueueGitDataSync(cacheType, cached.syncedAt)) {
+			await enqueueGitDataSync(authCtx, jobType, cacheKey, jobPayload);
+		}
 		return cached.data;
 	}
 
@@ -2475,7 +2484,9 @@ async function readLocalFirstGitData<T>({
 				shared.data,
 				shared.etag,
 			).catch(() => {});
-			await enqueueGitDataSync(authCtx, jobType, cacheKey, jobPayload);
+			if (shouldQueueGitDataSync(cacheType, shared.syncedAt)) {
+				await enqueueGitDataSync(authCtx, jobType, cacheKey, jobPayload);
+			}
 			return shared.data;
 		}
 	}

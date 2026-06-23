@@ -165,7 +165,9 @@ export async function setCachedRepoPageData<T>(
 	data: T,
 ): Promise<void> {
 	const envelope = { v: 2 as const, syncedAt: new Date().toISOString(), data };
-	await redis.set(githubCacheKeys.repoPageData(userId, owner, repo), envelope);
+	await redis.set(githubCacheKeys.repoPageData(userId, owner, repo), envelope, {
+		ex: TTL.medium,
+	});
 }
 
 export async function tryAcquireRepoPageRefreshLock(
@@ -208,11 +210,15 @@ export async function updateCachedRepoPageDataNavCounts(
 		...(updates.openIssues !== undefined && { openIssues: updates.openIssues }),
 	};
 
-	await redis.set(key, {
-		v: 2 as const,
-		syncedAt: existingEntry.syncedAt ?? new Date().toISOString(),
-		data: { ...existing, navCounts: updatedNavCounts },
-	});
+	await redis.set(
+		key,
+		{
+			v: 2 as const,
+			syncedAt: existingEntry.syncedAt ?? new Date().toISOString(),
+			data: { ...existing, navCounts: updatedNavCounts },
+		},
+		{ ex: TTL.medium },
+	);
 }
 
 export async function getCachedRepoTree<T>(owner: string, repo: string): Promise<T | null> {

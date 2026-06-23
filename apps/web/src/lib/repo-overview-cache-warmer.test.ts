@@ -15,6 +15,7 @@ const github = vi.hoisted(() => ({
 }));
 
 const readmeCache = vi.hoisted(() => ({
+	deleteCachedReadmeHtml: vi.fn(),
 	getCachedReadmeHtml: vi.fn(),
 	setCachedReadmeHtml: vi.fn(),
 }));
@@ -37,6 +38,7 @@ const markdownRenderer = vi.hoisted(() => ({
 }));
 
 const redis = vi.hoisted(() => ({
+	del: vi.fn(),
 	set: vi.fn(),
 }));
 
@@ -52,6 +54,7 @@ describe("repo overview cache warmer helpers", () => {
 		for (const helper of Object.values(readmeCache)) helper.mockReset();
 		for (const helper of Object.values(repoDataCache)) helper.mockReset();
 		markdownRenderer.renderMarkdownToHtml.mockReset();
+		redis.del.mockReset();
 		redis.set.mockReset();
 	});
 
@@ -145,5 +148,52 @@ describe("repo overview cache warmer helpers", () => {
 			},
 		]);
 		expect(repoDataCache.setCachedRepoTree).toHaveBeenCalledWith("Owner", "Repo", tree);
+	});
+
+	it("deletes cached README HTML when a forced refresh gets a definitive 404", async () => {
+		readmeCache.getCachedReadmeHtml.mockResolvedValue("<h1>Old</h1>");
+		const getReadme = vi.fn().mockRejectedValue({ status: 404 });
+		const authCtx = {
+			userId: "user-1",
+			token: "token",
+			octokit: { repos: { getReadme } },
+			forceRefresh: false,
+		};
+
+		const { getRepoReadmeHtmlCacheFirst } =
+			await import("./repo-overview-cache-warmer");
+
+		await expect(
+			getRepoReadmeHtmlCacheFirst("Owner", "Repo", "main", authCtx as never, {
+				forceRefresh: true,
+			}),
+		).resolves.toBeNull();
+		expect(readmeCache.deleteCachedReadmeHtml).toHaveBeenCalledWith("Owner", "Repo");
+		expect(readmeCache.setCachedReadmeHtml).not.toHaveBeenCalled();
+	});
+
+	it("releases the README background refresh lock after transient refresh failure", async () => {
+		readmeCache.getCachedReadmeHtml.mockResolvedValue("<h1>Cached</h1>");
+		redis.set.mockResolvedValue("OK");
+		const getReadme = vi.fn().mockRejectedValue({ status: 503 });
+		const authCtx = {
+			userId: "user-1",
+			token: "token",
+			octokit: { repos: { getReadme } },
+			forceRefresh: false,
+		};
+		vi.spyOn(console, "error").mockImplementation(() => {});
+
+		const { getRepoReadmeHtmlCacheFirst } =
+			await import("./repo-overview-cache-warmer");
+
+		await expect(
+			getRepoReadmeHtmlCacheFirst("Owner", "Repo", "main", authCtx as never),
+		).resolves.toBe("<h1>Cached</h1>");
+		await vi.waitFor(() => {
+			expect(redis.del).toHaveBeenCalledWith(
+				"readme-html-refresh-lock:owner/repo",
+			);
+		});
 	});
 });

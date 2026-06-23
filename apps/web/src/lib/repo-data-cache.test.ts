@@ -54,17 +54,21 @@ describe("repo-data-cache repo page envelopes", () => {
 		});
 	});
 
-	it("writes v2 repo page envelopes without a hard TTL", async () => {
+	it("writes v2 repo page envelopes with the medium TTL", async () => {
 		const { setCachedRepoPageData } = await import("./repo-data-cache");
 		const data = { repoData: { name: "repo" } };
 
 		await setCachedRepoPageData("user-1", "Owner", "Repo", data);
 
-		expect(redisSet).toHaveBeenCalledWith("repo_page_data:user-1:owner/repo", {
-			v: 2,
-			syncedAt: "2026-06-23T12:00:00.000Z",
-			data,
-		});
+		expect(redisSet).toHaveBeenCalledWith(
+			"repo_page_data:user-1:owner/repo",
+			{
+				v: 2,
+				syncedAt: "2026-06-23T12:00:00.000Z",
+				data,
+			},
+			{ ex: 60 * 60 },
+		);
 	});
 
 	it("rewraps nav count updates and preserves existing syncedAt", async () => {
@@ -82,14 +86,18 @@ describe("repo-data-cache repo page envelopes", () => {
 			openPrs: 4,
 		});
 
-		expect(redisSet).toHaveBeenCalledWith("repo_page_data:user-1:owner/repo", {
-			v: 2,
-			syncedAt: "2026-06-23T11:45:00.000Z",
-			data: {
-				repoData: { name: "repo" },
-				navCounts: { openPrs: 4, openIssues: 2, activeRuns: 3 },
+		expect(redisSet).toHaveBeenCalledWith(
+			"repo_page_data:user-1:owner/repo",
+			{
+				v: 2,
+				syncedAt: "2026-06-23T11:45:00.000Z",
+				data: {
+					repoData: { name: "repo" },
+					navCounts: { openPrs: 4, openIssues: 2, activeRuns: 3 },
+				},
 			},
-		});
+			{ ex: 60 * 60 },
+		);
 	});
 
 	it("acquires repo page refresh locks with NX and EX", async () => {

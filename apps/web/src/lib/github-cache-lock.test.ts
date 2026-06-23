@@ -46,11 +46,18 @@ describe("github-cache-lock", () => {
 	});
 
 	it("does not extend a lock owned by another run", async () => {
-		redis.get.mockResolvedValue("run-2");
+		redis.eval.mockResolvedValue(0);
 		const { renewGithubCacheWarmLock } = await import("./github-cache-lock");
 
 		await expect(renewGithubCacheWarmLock("user-1", "run-1", 99)).resolves.toBe(false);
 		expect(redis.set).not.toHaveBeenCalled();
+		expect(redis.eval).toHaveBeenCalledWith(
+			expect.stringContaining(
+				'redis.call("SET", KEYS[1], ARGV[1], "EX", ARGV[2])',
+			),
+			["github-cache-warm-lock:user-1"],
+			["run-1", "99"],
+		);
 	});
 
 	it("reports sanitized lock status for the debug UI", async () => {

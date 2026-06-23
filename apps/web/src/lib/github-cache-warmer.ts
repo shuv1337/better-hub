@@ -1,5 +1,7 @@
 import type { GitHubAuthContext } from "./github-auth-context";
-import { isGithubCacheWarmLockHeld } from "./github-cache-lock";
+import { renewGithubCacheWarmLock } from "./github-cache-lock";
+import { githubCacheKeys } from "./github-cache-descriptors";
+import { shouldRefresh, type GithubCacheDataClass } from "./github-cache-policy";
 import {
 	fetchAndCacheRepoPageDataWithAuth,
 	getOrgRepos,
@@ -21,6 +23,21 @@ import {
 	warmOverviewPRs,
 	warmRepoFileTreeForLayout,
 } from "./repo-overview-cache-warmer";
+import {
+	getCachedBranches,
+	getCachedContributorAvatars,
+	getCachedOverviewCI,
+	getCachedOverviewCommitActivity,
+	getCachedOverviewEvents,
+	getCachedOverviewIssues,
+	getCachedOverviewPRs,
+	getCachedRepoLanguages,
+	getCachedRepoPageDataEntry,
+	getCachedRepoTree,
+	getCachedTags,
+} from "./repo-data-cache";
+import { getCachedReadmeHtml } from "./readme-cache";
+import { getGithubCacheEntrySyncedAt } from "./github-sync-store";
 
 export const DEFAULT_MAX_REPOS = 100;
 export const DEFAULT_CONCURRENT_REPOS = 3;
@@ -271,6 +288,26 @@ async function runRepoStage(
 	}
 }
 
+async function isUserCacheFresh(
+	userId: string,
+	cacheKey: string,
+	dataClass: GithubCacheDataClass,
+): Promise<boolean> {
+	const syncedAt = await getGithubCacheEntrySyncedAt(userId, cacheKey);
+	return !shouldRefresh(syncedAt, dataClass);
+}
+
+async function isPresent<T>(value: Promise<T | null>): Promise<boolean> {
+	return (await value) !== null;
+}
+
+async function shouldRunRepoStage(
+	refreshStaleOnly: boolean,
+	freshCheck: () => Promise<boolean>,
+): Promise<boolean> {
+	return !refreshStaleOnly || !(await freshCheck());
+}
+
 async function runStageGroup(
 	repo: WarmableRepo,
 	errors: StageError[],
@@ -289,15 +326,27 @@ function fullRefreshAuth(authCtx: GitHubAuthContext): GitHubAuthContext {
 async function warmRepo(params: {
 	authCtx: GitHubAuthContext;
 	mode: GithubCacheWarmMode;
+	refreshStaleOnly: boolean;
 	repo: WarmableRepo;
 	run: GithubCacheWarmRun;
 }): Promise<{ warmed: boolean; errors: StageError[]; lockLost?: boolean }> {
-	const { authCtx, mode, repo, run } = params;
+	const { authCtx, mode, refreshStaleOnly, repo, run } = params;
 	const errors: StageError[] = [];
 	let pageData: RepoPageData | null = null;
 	const assertRunLock = () => assertGithubCacheWarmLock(authCtx.userId, run);
 
 	await runRepoStage(repo, "fetchAndCacheRepoPageData", errors, assertRunLock, async () => {
+		if (refreshStaleOnly) {
+			const cached = await getCachedRepoPageDataEntry<RepoPageData>(
+				authCtx.userId,
+				repo.owner,
+				repo.repo,
+			);
+			if (cached && !shouldRefresh(cached.syncedAt, "repo-chrome")) {
+				pageData = cached.data;
+				return;
+			}
+		}
 		const result = await fetchAndCacheRepoPageDataWithAuth(
 			authCtx,
 			repo.owner,
@@ -316,90 +365,200 @@ async function warmRepo(params: {
 
 	if (!isEmptyRepo) {
 		await runRepoStage(repo, "warmRepoFileTreeForLayout", errors, assertRunLock, () =>
-			warmRepoFileTreeForLayout(repo.owner, repo.repo, defaultBranch, authCtx),
+			shouldRunRepoStage(refreshStaleOnly, () =>
+				isPresent(getCachedRepoTree(repo.owner, repo.repo)),
+			).then((shouldRun) =>
+				shouldRun
+					? warmRepoFileTreeForLayout(
+							repo.owner,
+							repo.repo,
+							defaultBranch,
+							authCtx,
+						)
+					: null,
+			),
 		);
 	}
 
-	await runRepoStage(repo, "warmLayoutMetadataQuick", errors, assertRunLock, () =>
-		warmLayoutMetadataQuick({
-			owner: repo.owner,
-			repo: repo.repo,
-			pageData: loadedPageData,
-			authCtx,
-			isEmptyRepo,
-		}),
+	const layoutAuthCtx = mode === "full" ? fullRefreshAuth(authCtx) : authCtx;
+	await runRepoStage(
+		repo,
+		mode === "full" ? "warmLayoutMetadataFull" : "warmLayoutMetadataQuick",
+		errors,
+		assertRunLock,
+		async () => {
+			const layoutFresh =
+				(await isPresent(getCachedRepoLanguages(repo.owner, repo.repo))) &&
+				(await isPresent(getCachedBranches(repo.owner, repo.repo))) &&
+				(await isPresent(getCachedTags(repo.owner, repo.repo))) &&
+				(isEmptyRepo ||
+					(await isPresent(
+						getCachedContributorAvatars(repo.owner, repo.repo),
+					)));
+			if (refreshStaleOnly && layoutFresh) return null;
+			return mode === "full"
+				? warmLayoutMetadataFull({
+						owner: repo.owner,
+						repo: repo.repo,
+						pageData: loadedPageData,
+						authCtx: layoutAuthCtx,
+						isEmptyRepo,
+					})
+				: warmLayoutMetadataQuick({
+						owner: repo.owner,
+						repo: repo.repo,
+						pageData: loadedPageData,
+						authCtx,
+						isEmptyRepo,
+					});
+		},
 	);
 
 	if (!isEmptyRepo) {
 		await runRepoStage(repo, "getRepoReadmeHtmlCacheFirst", errors, assertRunLock, () =>
-			getRepoReadmeHtmlCacheFirst(repo.owner, repo.repo, defaultBranch, authCtx),
+			shouldRunRepoStage(refreshStaleOnly, () =>
+				isPresent(getCachedReadmeHtml(repo.owner, repo.repo)),
+			).then((shouldRun) =>
+				shouldRun
+					? getRepoReadmeHtmlCacheFirst(
+							repo.owner,
+							repo.repo,
+							defaultBranch,
+							authCtx,
+						)
+					: null,
+			),
 		);
 	}
 
 	await runStageGroup(repo, errors, assertRunLock, [
 		{
 			name: "warmOverviewPRs",
-			run: () => warmOverviewPRs(repo.owner, repo.repo, authCtx),
+			run: async () =>
+				(await shouldRunRepoStage(refreshStaleOnly, () =>
+					isPresent(getCachedOverviewPRs(repo.owner, repo.repo)),
+				))
+					? warmOverviewPRs(repo.owner, repo.repo, authCtx)
+					: null,
 		},
 		{
 			name: "warmOverviewIssues",
-			run: () => warmOverviewIssues(repo.owner, repo.repo, authCtx),
+			run: async () =>
+				(await shouldRunRepoStage(refreshStaleOnly, () =>
+					isPresent(getCachedOverviewIssues(repo.owner, repo.repo)),
+				))
+					? warmOverviewIssues(repo.owner, repo.repo, authCtx)
+					: null,
 		},
 		{
 			name: "warmOverviewEvents",
-			run: () => warmOverviewEvents(repo.owner, repo.repo, authCtx),
+			run: async () =>
+				(await shouldRunRepoStage(refreshStaleOnly, () =>
+					isPresent(getCachedOverviewEvents(repo.owner, repo.repo)),
+				))
+					? warmOverviewEvents(repo.owner, repo.repo, authCtx)
+					: null,
 		},
 		{
 			name: "warmOverviewCIStatus",
-			run: () =>
-				warmOverviewCIStatus(repo.owner, repo.repo, defaultBranch, authCtx),
+			run: async () =>
+				(await shouldRunRepoStage(refreshStaleOnly, () =>
+					isPresent(getCachedOverviewCI(repo.owner, repo.repo)),
+				))
+					? warmOverviewCIStatus(
+							repo.owner,
+							repo.repo,
+							defaultBranch,
+							authCtx,
+						)
+					: null,
 		},
 	]);
 
 	await runRepoStage(repo, "getRepoWorkflowRuns", errors, assertRunLock, () =>
-		getRepoWorkflowRuns(repo.owner, repo.repo, 50, authOverride(authCtx)),
+		shouldRunRepoStage(refreshStaleOnly, () =>
+			isUserCacheFresh(
+				authCtx.userId,
+				githubCacheKeys.repoWorkflowRuns(repo.owner, repo.repo, 50),
+				"ci",
+			),
+		).then((shouldRun) =>
+			shouldRun
+				? getRepoWorkflowRuns(
+						repo.owner,
+						repo.repo,
+						50,
+						authOverride(authCtx),
+					)
+				: null,
+		),
 	);
 
 	if (mode === "full") {
 		const refreshAuthCtx = fullRefreshAuth(authCtx);
-		await runRepoStage(repo, "warmLayoutMetadataFull", errors, assertRunLock, () =>
-			warmLayoutMetadataFull({
-				owner: repo.owner,
-				repo: repo.repo,
-				pageData: loadedPageData,
-				authCtx: refreshAuthCtx,
-				isEmptyRepo,
-			}),
-		);
 		await runStageGroup(repo, errors, assertRunLock, [
 			{
 				name: "getRepoReleases",
-				run: () =>
-					getRepoReleases(
-						repo.owner,
-						repo.repo,
-						authOverride(refreshAuthCtx),
-					),
+				run: async () =>
+					(await shouldRunRepoStage(refreshStaleOnly, () =>
+						isUserCacheFresh(
+							authCtx.userId,
+							githubCacheKeys.repoReleases(
+								repo.owner,
+								repo.repo,
+							),
+							"repo-chrome",
+						),
+					))
+						? getRepoReleases(
+								repo.owner,
+								repo.repo,
+								authOverride(refreshAuthCtx),
+							)
+						: null,
 			},
 			{
 				name: "getRepoDiscussionsPage",
-				run: () =>
-					loadedPageData.repoData.has_discussions
+				run: async () => {
+					if (!loadedPageData.repoData.has_discussions) return null;
+					const shouldRun = await shouldRunRepoStage(
+						refreshStaleOnly,
+						() =>
+							isUserCacheFresh(
+								authCtx.userId,
+								githubCacheKeys.repoDiscussions(
+									repo.owner,
+									repo.repo,
+								),
+								"hot-list",
+							),
+					);
+					return shouldRun
 						? getRepoDiscussionsPage(
 								repo.owner,
 								repo.repo,
 								authOverride(refreshAuthCtx),
 							)
-						: Promise.resolve(null),
+						: null;
+				},
 			},
 			{
 				name: "warmOverviewCommitActivity",
-				run: () =>
-					warmOverviewCommitActivity(
-						repo.owner,
-						repo.repo,
-						refreshAuthCtx,
-					),
+				run: async () =>
+					(await shouldRunRepoStage(refreshStaleOnly, () =>
+						isPresent(
+							getCachedOverviewCommitActivity(
+								repo.owner,
+								repo.repo,
+							),
+						),
+					))
+						? warmOverviewCommitActivity(
+								repo.owner,
+								repo.repo,
+								refreshAuthCtx,
+							)
+						: null,
 			},
 		]);
 	}
@@ -409,7 +568,7 @@ async function warmRepo(params: {
 
 async function assertGithubCacheWarmLock(userId: string, run: GithubCacheWarmRun): Promise<void> {
 	if (!run.lockAlreadyHeld) return;
-	if (!(await isGithubCacheWarmLockHeld(userId, run.runId))) {
+	if (!(await renewGithubCacheWarmLock(userId, run.runId))) {
 		throw new GithubCacheWarmLockLostError();
 	}
 }
@@ -466,7 +625,13 @@ export async function warmPersonalGithubCache(params: {
 
 	const repoResults = await mapConcurrent(repos, options.maxConcurrentRepos, async (repo) => {
 		try {
-			return await warmRepo({ authCtx, mode: options.mode, repo, run });
+			return await warmRepo({
+				authCtx,
+				mode: options.mode,
+				refreshStaleOnly: options.refreshStaleOnly ?? false,
+				repo,
+				run,
+			});
 		} catch (error) {
 			if (isLockLostError(error)) {
 				return {

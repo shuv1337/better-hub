@@ -11,6 +11,14 @@ end
 return 0
 `;
 
+const COMPARE_AND_RENEW_SCRIPT = `
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+	redis.call("SET", KEYS[1], ARGV[1], "EX", ARGV[2])
+	return 1
+end
+return 0
+`;
+
 type RedisEval = {
 	eval: (script: string, keys: string[], args: string[]) => Promise<number | string>;
 };
@@ -57,10 +65,12 @@ export async function renewGithubCacheWarmLock(
 	runId: string,
 	ttlSeconds = getGithubCacheWarmLockTtlSeconds(),
 ): Promise<boolean> {
-	const lockKey = githubCacheWarmLockKey(userId);
-	if ((await redis.get<string>(lockKey)) !== runId) return false;
-	await redis.set(lockKey, runId, { ex: ttlSeconds });
-	return true;
+	const result = await (redis as unknown as RedisEval).eval(
+		COMPARE_AND_RENEW_SCRIPT,
+		[githubCacheWarmLockKey(userId)],
+		[runId, String(ttlSeconds)],
+	);
+	return Number(result) === 1;
 }
 
 export async function releaseGithubCacheWarmLock(userId: string, runId: string): Promise<boolean> {
