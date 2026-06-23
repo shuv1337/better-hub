@@ -15,13 +15,34 @@ import {
 } from "@/lib/github-cache-warmer";
 import { inngest } from "@/lib/inngest";
 
+const DEFAULT_API_WARM_MAX_REPOS = 100;
+const DEFAULT_API_WARM_CONCURRENCY = 3;
+
 const warmRequestSchema = z
 	.object({
 		mode: z.enum(["quick", "full"]).default("quick"),
 		maxRepos: z.number().int().min(1).max(500).optional(),
+		maxConcurrentRepos: z.number().int().min(1).max(10).optional(),
 		refreshStaleOnly: z.boolean().optional(),
 	})
 	.strict();
+
+function envInt(name: string, fallback: number): number {
+	const value = Number(process.env[name]);
+	return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function withWarmDefaults(options: GithubCacheWarmOptions): GithubCacheWarmOptions {
+	return {
+		...options,
+		maxRepos:
+			options.maxRepos ??
+			envInt("GITHUB_CACHE_WARM_MAX_REPOS", DEFAULT_API_WARM_MAX_REPOS),
+		maxConcurrentRepos:
+			options.maxConcurrentRepos ??
+			envInt("GITHUB_CACHE_WARM_CONCURRENCY", DEFAULT_API_WARM_CONCURRENCY),
+	};
+}
 
 function isInlineWarmEnabled(): boolean {
 	return (
@@ -51,7 +72,7 @@ async function parseWarmOptions(
 			),
 		};
 	}
-	return { ok: true, options: parsed.data };
+	return { ok: true, options: withWarmDefaults(parsed.data) };
 }
 
 function makeRun(

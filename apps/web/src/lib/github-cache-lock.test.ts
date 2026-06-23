@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const redis = vi.hoisted(() => ({
 	eval: vi.fn(),
@@ -13,6 +13,10 @@ describe("github-cache-lock", () => {
 		redis.eval.mockReset();
 		redis.get.mockReset();
 		redis.set.mockReset();
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
 	});
 
 	it("acquires a user warm lock with the run id as the lock owner", async () => {
@@ -59,5 +63,17 @@ describe("github-cache-lock", () => {
 			runId: "run-1",
 		});
 		expect(redis.get).toHaveBeenCalledWith("github-cache-warm-lock:user-1");
+	});
+
+	it("allows the lock TTL to be tuned by environment", async () => {
+		vi.stubEnv("GITHUB_CACHE_WARM_LOCK_TTL_SECONDS", "123");
+		redis.set.mockResolvedValue("OK");
+		const { acquireGithubCacheWarmLock } = await import("./github-cache-lock");
+
+		await acquireGithubCacheWarmLock("user-1", "run-1");
+		expect(redis.set).toHaveBeenCalledWith("github-cache-warm-lock:user-1", "run-1", {
+			ex: 123,
+			nx: true,
+		});
 	});
 });

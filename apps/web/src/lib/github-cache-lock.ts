@@ -23,10 +23,15 @@ export function githubCacheWarmLastResultKey(userId: string): string {
 	return `github-cache-warm-last:${userId}`;
 }
 
+export function getGithubCacheWarmLockTtlSeconds(): number {
+	const value = Number(process.env["GITHUB_CACHE_WARM_LOCK_TTL_SECONDS"]);
+	return Number.isFinite(value) && value > 0 ? value : GITHUB_CACHE_WARM_LOCK_TTL_SECONDS;
+}
+
 export async function acquireGithubCacheWarmLock(
 	userId: string,
 	runId: string,
-	ttlSeconds = GITHUB_CACHE_WARM_LOCK_TTL_SECONDS,
+	ttlSeconds = getGithubCacheWarmLockTtlSeconds(),
 ): Promise<{ acquired: boolean; lockKey: string }> {
 	const lockKey = githubCacheWarmLockKey(userId);
 	const result = await redis.set(lockKey, runId, { ex: ttlSeconds, nx: true });
@@ -50,7 +55,7 @@ export async function getGithubCacheWarmLockStatus(userId: string): Promise<{
 export async function renewGithubCacheWarmLock(
 	userId: string,
 	runId: string,
-	ttlSeconds = GITHUB_CACHE_WARM_LOCK_TTL_SECONDS,
+	ttlSeconds = getGithubCacheWarmLockTtlSeconds(),
 ): Promise<boolean> {
 	const lockKey = githubCacheWarmLockKey(userId);
 	if ((await redis.get<string>(lockKey)) !== runId) return false;

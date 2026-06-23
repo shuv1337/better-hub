@@ -79,6 +79,7 @@ describe("github cache warm API route", () => {
 		vi.stubEnv("NODE_ENV", "production");
 		vi.stubEnv("GITHUB_CACHE_WARM_INLINE", "0");
 		vi.stubEnv("GITHUB_CACHE_WARM_PROD_ENABLED", "1");
+		vi.stubEnv("GITHUB_CACHE_WARM_CONCURRENCY", "4");
 	});
 
 	afterEach(() => {
@@ -99,7 +100,7 @@ describe("github cache warm API route", () => {
 				userId: "user-1",
 				runId: "run-1",
 				lockKey: "github-cache-warm-lock:user-1",
-				options: { mode: "quick", maxRepos: 5 },
+				options: { mode: "quick", maxRepos: 5, maxConcurrentRepos: 4 },
 			},
 		});
 		expect(githubCacheLock.releaseGithubCacheWarmLock).toHaveBeenCalledWith(
