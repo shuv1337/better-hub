@@ -122,34 +122,75 @@ export async function enqueueGithubSyncJob<TPayload>(
 	payload: TPayload,
 ) {
 	const now = new Date().toISOString();
+	const payloadJson = JSON.stringify(payload);
+	const existing = await prisma.githubSyncJob.findUnique({
+		where: { userId_dedupeKey: { userId, dedupeKey } },
+		select: { id: true, status: true },
+	});
+
+	if (existing?.status === "running") return;
+
+	if (existing?.status === "failed") {
+		await prisma.githubSyncJob.updateMany({
+			where: { id: existing.id, status: "failed" },
+			data: {
+				jobType,
+				payloadJson,
+				status: "pending",
+				attempts: 0,
+				nextAttemptAt: now,
+				startedAt: null,
+				lastError: null,
+				updatedAt: now,
+			},
+		});
+		return;
+	}
+
+	if (existing?.status === "pending") {
+		await prisma.githubSyncJob.updateMany({
+			where: { id: existing.id, status: "pending" },
+			data: {
+				jobType,
+				payloadJson,
+				nextAttemptAt: now,
+				updatedAt: now,
+			},
+		});
+		return;
+	}
 
 	try {
-		await prisma.githubSyncJob.upsert({
-			where: { userId_dedupeKey: { userId, dedupeKey } },
-			create: {
+		await prisma.githubSyncJob.create({
+			data: {
 				userId,
 				dedupeKey,
 				jobType,
-				payloadJson: JSON.stringify(payload),
+				payloadJson,
 				status: "pending",
 				attempts: 0,
 				nextAttemptAt: now,
 				createdAt: now,
 				updatedAt: now,
 			},
-			update: {},
 		});
 	} catch (e) {
-		if (
-			e instanceof Prisma.PrismaClientKnownRequestError &&
-			(e.code === "P2002" || e.code === "P2025")
-		) {
+		if (isKnownPrismaRequestError(e) && (e.code === "P2002" || e.code === "P2025")) {
 			// P2002: unique constraint violation (concurrent insert race)
-			// P2025: record not found during upsert (concurrent insert + delete race)
+			// P2025: record not found during create/delete race
 			return;
 		}
 		throw e;
 	}
+}
+
+function isKnownPrismaRequestError(error: unknown): error is Prisma.PrismaClientKnownRequestError {
+	if (error instanceof Prisma.PrismaClientKnownRequestError) return true;
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		typeof (error as { code?: unknown }).code === "string"
+	);
 }
 
 async function recoverTimedOutRunningJobs(userId: string) {
