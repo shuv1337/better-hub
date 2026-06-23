@@ -48,4 +48,16 @@ describe("github-cache-lock", () => {
 		await expect(renewGithubCacheWarmLock("user-1", "run-1", 99)).resolves.toBe(false);
 		expect(redis.set).not.toHaveBeenCalled();
 	});
+
+	it("reports sanitized lock status for the debug UI", async () => {
+		redis.get.mockResolvedValue("run-1");
+		const { getGithubCacheWarmLockStatus } = await import("./github-cache-lock");
+
+		await expect(getGithubCacheWarmLockStatus("user-1")).resolves.toEqual({
+			locked: true,
+			lockKey: "github-cache-warm-lock:user-1",
+			runId: "run-1",
+		});
+		expect(redis.get).toHaveBeenCalledWith("github-cache-warm-lock:user-1");
+	});
 });

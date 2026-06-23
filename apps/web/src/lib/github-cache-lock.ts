@@ -37,6 +37,16 @@ export async function isGithubCacheWarmLockHeld(userId: string, runId: string): 
 	return (await redis.get<string>(githubCacheWarmLockKey(userId))) === runId;
 }
 
+export async function getGithubCacheWarmLockStatus(userId: string): Promise<{
+	locked: boolean;
+	lockKey: string;
+	runId: string | null;
+}> {
+	const lockKey = githubCacheWarmLockKey(userId);
+	const runId = await redis.get<string>(lockKey);
+	return { locked: Boolean(runId), lockKey, runId: runId ?? null };
+}
+
 export async function renewGithubCacheWarmLock(
 	userId: string,
 	runId: string,
