@@ -1,4 +1,5 @@
 import type { GitHubAuthContext } from "./github-auth-context";
+import { isGithubCacheWarmLockHeld } from "./github-cache-lock";
 import {
 	fetchAndCacheRepoPageDataWithAuth,
 	getOrgRepos,
@@ -78,6 +79,17 @@ interface StageError {
 	repo: string;
 	stage: string;
 	message: string;
+}
+
+class GithubCacheWarmLockLostError extends Error {
+	constructor() {
+		super("GitHub cache warm lock was lost");
+		this.name = "GithubCacheWarmLockLostError";
+	}
+}
+
+function isLockLostError(error: unknown): boolean {
+	return error instanceof GithubCacheWarmLockLostError;
 }
 
 function authOverride(authCtx: GitHubAuthContext): AuthOverride {
@@ -206,14 +218,40 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+export function createGithubCacheWarmSkippedResult(params: {
+	userId: string;
+	run: GithubCacheWarmRun;
+	skippedReason: NonNullable<GithubCacheWarmResult["skippedReason"]>;
+	startedAt?: number;
+	errors?: GithubCacheWarmResult["errors"];
+}): GithubCacheWarmResult {
+	const now = Date.now();
+	return {
+		userId: params.userId,
+		runId: params.run.runId,
+		source: params.run.source,
+		discoveredRepos: 0,
+		selectedRepos: 0,
+		warmedRepos: 0,
+		skippedRepos: 0,
+		failedRepos: 0,
+		jobsQueued: 0,
+		durationMs: params.startedAt ? now - params.startedAt : 0,
+		skippedReason: params.skippedReason,
+		errors: params.errors ?? [],
+	};
+}
+
 async function runRepoStage(
 	repo: WarmableRepo,
 	stage: string,
 	errors: StageError[],
+	assertRunLock: () => Promise<void>,
 	fn: () => Promise<unknown>,
 ): Promise<void> {
 	const startedAt = Date.now();
 	try {
+		await assertRunLock();
 		await fn();
 		logWarmEvent("github_cache_warm.stage_completed", {
 			repo: repo.fullName,
@@ -221,6 +259,7 @@ async function runRepoStage(
 			durationMs: Date.now() - startedAt,
 		});
 	} catch (error) {
+		if (isLockLostError(error)) throw error;
 		const message = errorMessage(error);
 		errors.push({ repo: repo.fullName, stage, message });
 		logWarmEvent("github_cache_warm.stage_failed", {
@@ -235,10 +274,11 @@ async function runRepoStage(
 async function runStageGroup(
 	repo: WarmableRepo,
 	errors: StageError[],
+	assertRunLock: () => Promise<void>,
 	stages: Array<{ name: string; run: () => Promise<unknown> }>,
 ): Promise<void> {
 	await mapConcurrent(stages, DEFAULT_CONCURRENT_STAGES_PER_REPO, (stage) =>
-		runRepoStage(repo, stage.name, errors, stage.run),
+		runRepoStage(repo, stage.name, errors, assertRunLock, stage.run),
 	);
 }
 
@@ -250,12 +290,14 @@ async function warmRepo(params: {
 	authCtx: GitHubAuthContext;
 	mode: GithubCacheWarmMode;
 	repo: WarmableRepo;
-}): Promise<{ warmed: boolean; errors: StageError[] }> {
-	const { authCtx, mode, repo } = params;
+	run: GithubCacheWarmRun;
+}): Promise<{ warmed: boolean; errors: StageError[]; lockLost?: boolean }> {
+	const { authCtx, mode, repo, run } = params;
 	const errors: StageError[] = [];
 	let pageData: RepoPageData | null = null;
+	const assertRunLock = () => assertGithubCacheWarmLock(authCtx.userId, run);
 
-	await runRepoStage(repo, "fetchAndCacheRepoPageData", errors, async () => {
+	await runRepoStage(repo, "fetchAndCacheRepoPageData", errors, assertRunLock, async () => {
 		const result = await fetchAndCacheRepoPageDataWithAuth(
 			authCtx,
 			repo.owner,
@@ -265,34 +307,36 @@ async function warmRepo(params: {
 		pageData = result.data;
 	});
 
-	if (!pageData) return { warmed: false, errors };
+	const loadedPageData = pageData as RepoPageData | null;
+	if (!loadedPageData) return { warmed: false, errors };
 
-	const defaultBranch = pageData.repoData.default_branch || repo.defaultBranch || "main";
-	const isEmptyRepo = pageData.repoData.size === 0;
+	const defaultBranch =
+		loadedPageData.repoData.default_branch || repo.defaultBranch || "main";
+	const isEmptyRepo = loadedPageData.repoData.size === 0;
 
 	if (!isEmptyRepo) {
-		await runRepoStage(repo, "warmRepoFileTreeForLayout", errors, () =>
+		await runRepoStage(repo, "warmRepoFileTreeForLayout", errors, assertRunLock, () =>
 			warmRepoFileTreeForLayout(repo.owner, repo.repo, defaultBranch, authCtx),
 		);
 	}
 
-	await runRepoStage(repo, "warmLayoutMetadataQuick", errors, () =>
+	await runRepoStage(repo, "warmLayoutMetadataQuick", errors, assertRunLock, () =>
 		warmLayoutMetadataQuick({
 			owner: repo.owner,
 			repo: repo.repo,
-			pageData,
+			pageData: loadedPageData,
 			authCtx,
 			isEmptyRepo,
 		}),
 	);
 
 	if (!isEmptyRepo) {
-		await runRepoStage(repo, "getRepoReadmeHtmlCacheFirst", errors, () =>
+		await runRepoStage(repo, "getRepoReadmeHtmlCacheFirst", errors, assertRunLock, () =>
 			getRepoReadmeHtmlCacheFirst(repo.owner, repo.repo, defaultBranch, authCtx),
 		);
 	}
 
-	await runStageGroup(repo, errors, [
+	await runStageGroup(repo, errors, assertRunLock, [
 		{
 			name: "warmOverviewPRs",
 			run: () => warmOverviewPRs(repo.owner, repo.repo, authCtx),
@@ -312,22 +356,22 @@ async function warmRepo(params: {
 		},
 	]);
 
-	await runRepoStage(repo, "getRepoWorkflowRuns", errors, () =>
+	await runRepoStage(repo, "getRepoWorkflowRuns", errors, assertRunLock, () =>
 		getRepoWorkflowRuns(repo.owner, repo.repo, 50, authOverride(authCtx)),
 	);
 
 	if (mode === "full") {
 		const refreshAuthCtx = fullRefreshAuth(authCtx);
-		await runRepoStage(repo, "warmLayoutMetadataFull", errors, () =>
+		await runRepoStage(repo, "warmLayoutMetadataFull", errors, assertRunLock, () =>
 			warmLayoutMetadataFull({
 				owner: repo.owner,
 				repo: repo.repo,
-				pageData,
+				pageData: loadedPageData,
 				authCtx: refreshAuthCtx,
 				isEmptyRepo,
 			}),
 		);
-		await runStageGroup(repo, errors, [
+		await runStageGroup(repo, errors, assertRunLock, [
 			{
 				name: "getRepoReleases",
 				run: () =>
@@ -340,7 +384,7 @@ async function warmRepo(params: {
 			{
 				name: "getRepoDiscussionsPage",
 				run: () =>
-					pageData?.repoData.has_discussions
+					loadedPageData.repoData.has_discussions
 						? getRepoDiscussionsPage(
 								repo.owner,
 								repo.repo,
@@ -361,6 +405,13 @@ async function warmRepo(params: {
 	}
 
 	return { warmed: true, errors };
+}
+
+async function assertGithubCacheWarmLock(userId: string, run: GithubCacheWarmRun): Promise<void> {
+	if (!run.lockAlreadyHeld) return;
+	if (!(await isGithubCacheWarmLockHeld(userId, run.runId))) {
+		throw new GithubCacheWarmLockLostError();
+	}
 }
 
 export async function warmPersonalGithubCache(params: {
@@ -384,7 +435,27 @@ export async function warmPersonalGithubCache(params: {
 		refreshStaleOnly: options.refreshStaleOnly ?? false,
 	});
 
-	const repos = await discoverPersonalRepos(authCtx, { maxRepos: options.maxRepos });
+	let repos: WarmableRepo[];
+	try {
+		await assertGithubCacheWarmLock(authCtx.userId, run);
+		repos = await discoverPersonalRepos(authCtx, { maxRepos: options.maxRepos });
+		await assertGithubCacheWarmLock(authCtx.userId, run);
+	} catch (error) {
+		if (!isLockLostError(error)) throw error;
+		return createGithubCacheWarmSkippedResult({
+			userId: authCtx.userId,
+			run,
+			skippedReason: "lock-lost",
+			startedAt,
+			errors: [
+				{
+					repo: "*",
+					stage: "lock",
+					message: errorMessage(error),
+				},
+			],
+		});
+	}
 	logWarmEvent("github_cache_warm.started", {
 		userId: authCtx.userId,
 		runId: run.runId,
@@ -393,9 +464,26 @@ export async function warmPersonalGithubCache(params: {
 		discoveredRepos: repos.length,
 	});
 
-	const repoResults = await mapConcurrent(repos, options.maxConcurrentRepos, (repo) =>
-		warmRepo({ authCtx, mode: options.mode, repo }),
-	);
+	const repoResults = await mapConcurrent(repos, options.maxConcurrentRepos, async (repo) => {
+		try {
+			return await warmRepo({ authCtx, mode: options.mode, repo, run });
+		} catch (error) {
+			if (isLockLostError(error)) {
+				return {
+					warmed: false,
+					lockLost: true,
+					errors: [
+						{
+							repo: repo.fullName,
+							stage: "lock",
+							message: errorMessage(error),
+						},
+					],
+				};
+			}
+			throw error;
+		}
+	});
 	const errors = repoResults.flatMap((result) => result.errors);
 	const warmedRepos = repoResults.filter((result) => result.warmed).length;
 	const failedRepos = repoResults.filter(
@@ -414,6 +502,9 @@ export async function warmPersonalGithubCache(params: {
 		durationMs: Date.now() - startedAt,
 		errors,
 	};
+	if (repoResults.some((repoResult) => repoResult.lockLost)) {
+		result.skippedReason = "lock-lost";
+	}
 	logWarmEvent("github_cache_warm.completed", {
 		userId: authCtx.userId,
 		runId: run.runId,

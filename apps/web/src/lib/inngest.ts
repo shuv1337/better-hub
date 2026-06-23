@@ -9,8 +9,98 @@ import {
 import { prisma } from "@/lib/db";
 import { reportUsageToStripe } from "@/lib/billing/stripe";
 import { STRIPE_MAX_EVENT_AGE_DAYS } from "@/lib/billing/config";
+import { resolveGitHubAuthContextForUser } from "@/lib/github-auth-context";
+import {
+	isGithubCacheWarmLockHeld,
+	releaseGithubCacheWarmLock,
+	renewGithubCacheWarmLock,
+	storeGithubCacheWarmResult,
+} from "@/lib/github-cache-lock";
+import {
+	createGithubCacheWarmSkippedResult,
+	warmPersonalGithubCache,
+	type GithubCacheWarmOptions,
+	type GithubCacheWarmRun,
+} from "@/lib/github-cache-warmer";
 
 export const inngest = new Inngest({ id: "better-github" });
+
+export interface GithubCacheWarmEventData {
+	userId: string;
+	runId: string;
+	lockKey: string;
+	options: GithubCacheWarmOptions;
+}
+
+function githubCacheWarmRun(data: GithubCacheWarmEventData): GithubCacheWarmRun {
+	return {
+		runId: data.runId,
+		source: "inngest",
+		lockKey: data.lockKey,
+		lockAlreadyHeld: true,
+	};
+}
+
+export async function handleGithubCacheWarmEvent(data: GithubCacheWarmEventData) {
+	const run = githubCacheWarmRun(data);
+	if (!(await isGithubCacheWarmLockHeld(data.userId, data.runId))) {
+		const result = createGithubCacheWarmSkippedResult({
+			userId: data.userId,
+			run,
+			skippedReason: "lock-lost",
+		});
+		await storeGithubCacheWarmResult(data.userId, result);
+		return result;
+	}
+
+	try {
+		if (!(await renewGithubCacheWarmLock(data.userId, data.runId))) {
+			const result = createGithubCacheWarmSkippedResult({
+				userId: data.userId,
+				run,
+				skippedReason: "lock-lost",
+			});
+			await storeGithubCacheWarmResult(data.userId, result);
+			return result;
+		}
+
+		const authCtx = await resolveGitHubAuthContextForUser(data.userId);
+		if (!authCtx) {
+			const result = createGithubCacheWarmSkippedResult({
+				userId: data.userId,
+				run,
+				skippedReason: "auth-unavailable",
+			});
+			await storeGithubCacheWarmResult(data.userId, result);
+			return result;
+		}
+
+		await renewGithubCacheWarmLock(data.userId, data.runId);
+		const result = await warmPersonalGithubCache({
+			authCtx,
+			options: data.options,
+			run,
+		});
+		await storeGithubCacheWarmResult(data.userId, result);
+		return result;
+	} finally {
+		await releaseGithubCacheWarmLock(data.userId, data.runId);
+	}
+}
+
+export const warmGithubCache = inngest.createFunction(
+	{
+		id: "github-cache-warm",
+		concurrency: [{ limit: 1, key: "event.data.userId" }],
+		retries: 1,
+	},
+	{ event: "github/cache.warm" },
+	async ({ event, step }) => {
+		return step.run("warm-personal-github-cache", () =>
+			handleGithubCacheWarmEvent(event.data as GithubCacheWarmEventData),
+		);
+	},
+);
 
 interface ContentViewedData {
 	userId: string;

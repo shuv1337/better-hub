@@ -22,8 +22,13 @@ const overviewWarmers = vi.hoisted(() => ({
 	warmRepoFileTreeForLayout: vi.fn(),
 }));
 
+const githubCacheLock = vi.hoisted(() => ({
+	isGithubCacheWarmLockHeld: vi.fn(),
+}));
+
 vi.mock("./github", () => github);
 vi.mock("./repo-overview-cache-warmer", () => overviewWarmers);
+vi.mock("./github-cache-lock", () => githubCacheLock);
 
 const authCtx = {
 	userId: "user-1",
@@ -50,6 +55,8 @@ describe("github-cache-warmer", () => {
 	beforeEach(() => {
 		for (const helper of Object.values(github)) helper.mockReset();
 		for (const helper of Object.values(overviewWarmers)) helper.mockReset();
+		githubCacheLock.isGithubCacheWarmLockHeld.mockReset();
+		githubCacheLock.isGithubCacheWarmLockHeld.mockResolvedValue(true);
 		vi.spyOn(console, "info").mockImplementation(() => {});
 	});
 
@@ -210,5 +217,24 @@ describe("github-cache-warmer", () => {
 			"repo",
 			expect.objectContaining({ forceRefresh: true }),
 		);
+	});
+
+	it("returns lock-lost when the run lock no longer belongs to the run", async () => {
+		githubCacheLock.isGithubCacheWarmLockHeld.mockResolvedValue(false);
+
+		const { warmPersonalGithubCache } = await import("./github-cache-warmer");
+		const result = await warmPersonalGithubCache({
+			authCtx,
+			options: { mode: "quick", maxRepos: 1, maxConcurrentRepos: 1 },
+			run: {
+				runId: "run-1",
+				source: "script",
+				lockKey: "lock",
+				lockAlreadyHeld: true,
+			},
+		});
+
+		expect(result.skippedReason).toBe("lock-lost");
+		expect(github.getUserRepos).not.toHaveBeenCalled();
 	});
 });
