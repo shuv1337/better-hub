@@ -19,6 +19,7 @@ import {
 import { redis } from "./redis";
 import { computeContributorScore } from "./contributor-score";
 import { getCachedAuthorDossier, setCachedAuthorDossier } from "./repo-data-cache";
+import { isShareableCacheType, isSharedCacheReadEnabled } from "./github-cache-policy";
 
 export type RepoPermissions = {
 	admin: boolean;
@@ -94,40 +95,8 @@ type GitDataSyncJobType =
 	| "pr_bundle"
 	| "repo_discussions";
 
-// SECURITY: Only cache types that are safe to share across users belong here.
-// Any data from repos (issues, PRs, code, branches, etc.) is excluded because
-// private-repo data fetched by one authorized user would leak to others via
-// the shared cache, bypassing GitHub permission checks.
-// user_public_repos and org_repos are excluded: GitHub returns private repos when
-// the token matches the profile owner; see filterUserProfileReposForViewer.
-const SHAREABLE_CACHE_TYPES: ReadonlySet<string> = new Set([
-	"repo_branches",
-	"repo_tags",
-	"repo_releases",
-	"repo_issues",
-	"repo_pull_requests",
-	"issue",
-	"issue_comments",
-	"pull_request",
-	"pull_request_files",
-	"pull_request_comments",
-	"pull_request_reviews",
-	"pull_request_commits",
-	"repo_contributors",
-	"repo_workflows",
-	"repo_workflow_runs",
-	"repo_nav_counts",
-	"user_profile",
-	"user_public_orgs",
-	"user_events",
-	"org",
-	"org_members",
-	"trending_repos",
-]);
-
-function isShareableCacheType(jobType: string): boolean {
-	return SHAREABLE_CACHE_TYPES.has(jobType);
-}
+// SECURITY: Shared ghpub:* cache writes are allowlist-only in github-cache-policy.
+// Repo-scoped, org-scoped, and viewer-specific payloads must stay user-scoped.
 
 interface GitDataSyncJobPayload {
 	owner?: string;
@@ -2443,7 +2412,7 @@ async function enqueueGitDataSync(
 	cacheKey: string,
 	payload: GitDataSyncJobPayload,
 ) {
-	if (isShareableCacheType(jobType)) {
+	if (isShareableCacheType(jobType) && isSharedCacheReadEnabled()) {
 		const shared = await getSharedCacheEntry(cacheKey);
 		if (shared && Date.now() - new Date(shared.syncedAt).getTime() < 2 * 60 * 1000) {
 			return; // Another user recently refreshed this data
@@ -2485,8 +2454,9 @@ async function readLocalFirstGitData<T>({
 		return cached.data;
 	}
 
-	// Check shared cache before hitting GitHub API
-	if (shareable) {
+	// Check shared cache before hitting GitHub API. Disable with
+	// GITHUB_CACHE_SHARED_READ=0 during rollback/emergency response.
+	if (shareable && isSharedCacheReadEnabled()) {
 		const shared = await getSharedCacheEntry<T>(cacheKey);
 		if (shared) {
 			upsertGithubCacheEntry(
