@@ -131,7 +131,11 @@ interface LocalFirstGitReadOptions<T> {
 	fetchRemote: (octokit: Octokit) => Promise<T>;
 }
 
-type GitHubAuthOverride = GitHubAuthContext | null | undefined;
+type GitHubAuthOverride =
+	| GitHubAuthContext
+	| { authCtx: GitHubAuthContext | null }
+	| null
+	| undefined;
 
 const globalForGithubSync = globalThis as typeof globalThis & {
 	__githubSyncDrainingUsers?: Set<string>;
@@ -435,7 +439,12 @@ const getGitHubAuthContext = getRequestGitHubAuthContext;
 async function resolveGitHubAuthContext(
 	authOverride?: GitHubAuthOverride,
 ): Promise<GitHubAuthContext | null> {
-	if (authOverride !== undefined) return authOverride;
+	if (authOverride !== undefined) {
+		if (authOverride && typeof authOverride === "object" && "authCtx" in authOverride) {
+			return authOverride.authCtx;
+		}
+		return authOverride;
+	}
 	return getGitHubAuthContext();
 }
 
@@ -6619,13 +6628,14 @@ export interface CommitActivityWeek {
 export async function getCommitActivity(
 	owner: string,
 	repo: string,
+	authOverride?: GitHubAuthOverride,
 ): Promise<CommitActivityWeek[]> {
-	const octokit = await getOctokit();
-	if (!octokit) return [];
+	const authCtx = await resolveGitHubAuthContext(authOverride);
+	if (!authCtx) return [];
 
 	try {
 		const response = await retryStatsRequest(() =>
-			octokit.request("GET /repos/{owner}/{repo}/stats/commit_activity", {
+			authCtx.octokit.request("GET /repos/{owner}/{repo}/stats/commit_activity", {
 				owner,
 				repo,
 			}),
