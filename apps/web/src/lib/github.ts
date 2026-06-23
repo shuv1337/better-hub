@@ -1,7 +1,5 @@
 import { Octokit } from "@octokit/rest";
-import { headers } from "next/headers";
 import { cache } from "react";
-import { $Session, getServerSession } from "./auth";
 import {
 	claimDueGithubSyncJobs,
 	deleteGithubCacheByPrefix,
@@ -24,6 +22,7 @@ import {
 	githubCacheKeys,
 	normalizeGithubRepoKey,
 } from "./github-cache-descriptors";
+import { getRequestGitHubAuthContext, type GitHubAuthContext } from "./github-auth-context";
 import { isShareableCacheType, isSharedCacheReadEnabled } from "./github-cache-policy";
 
 export type RepoPermissions = {
@@ -50,14 +49,6 @@ export function extractRepoPermissions(repoData: {
 type RepoSort = "updated" | "pushed" | "full_name";
 type OrgRepoSort = "created" | "updated" | "pushed" | "full_name";
 type OrgRepoType = "all" | "public" | "private" | "forks" | "sources" | "member";
-
-interface GitHubAuthContext {
-	userId: string;
-	token: string;
-	octokit: Octokit;
-	forceRefresh: boolean;
-	githubUser: $Session["githubUser"];
-}
 
 type GitDataSyncJobType =
 	| "user_repos"
@@ -94,6 +85,7 @@ type GitDataSyncJobType =
 	| "user_public_orgs"
 	| "repo_workflows"
 	| "repo_workflow_runs"
+	| "repo_events"
 	| "repo_nav_counts"
 	| "org_members"
 	| "person_repo_activity"
@@ -134,6 +126,8 @@ interface LocalFirstGitReadOptions<T> {
 	jobPayload: GitDataSyncJobPayload;
 	fetchRemote: (octokit: Octokit) => Promise<T>;
 }
+
+type GitHubAuthOverride = GitHubAuthContext | null | undefined;
 
 const globalForGithubSync = globalThis as typeof globalThis & {
 	__githubSyncDrainingUsers?: Set<string>;
@@ -392,6 +386,10 @@ function buildRepoWorkflowRunsCacheKey(owner: string, repo: string, perPage: num
 	return githubCacheKeys.repoWorkflowRuns(owner, repo, perPage);
 }
 
+function buildRepoEventsCacheKey(owner: string, repo: string, perPage: number): string {
+	return githubCacheKeys.repoEvents(owner, repo, perPage);
+}
+
 function buildRepoNavCountsCacheKey(owner: string, repo: string): string {
 	return githubCacheKeys.repoNavCounts(owner, repo);
 }
@@ -428,27 +426,14 @@ async function cacheDefaultBranch(owner: string, repo: string, branch: string): 
 	});
 }
 
-const getGitHubAuthContext = cache(async (): Promise<GitHubAuthContext | null> => {
-	const session = await getServerSession();
-	const reqHeaders = await headers();
-	if (!session) return null;
-	const token = session.githubUser.accessToken;
+const getGitHubAuthContext = getRequestGitHubAuthContext;
 
-	const cacheControl = reqHeaders.get("cache-control") ?? "";
-	const pragma = reqHeaders.get("pragma") ?? "";
-	const forceRefresh =
-		cacheControl.includes("no-cache") ||
-		cacheControl.includes("max-age=0") ||
-		pragma.includes("no-cache");
-
-	return {
-		userId: session.user.id,
-		token,
-		octokit: new Octokit({ auth: token }),
-		forceRefresh,
-		githubUser: session.githubUser,
-	};
-});
+async function resolveGitHubAuthContext(
+	authOverride?: GitHubAuthOverride,
+): Promise<GitHubAuthContext | null> {
+	if (authOverride !== undefined) return authOverride;
+	return getGitHubAuthContext();
+}
 
 function getSyncErrorMessage(error: unknown): string {
 	if (typeof error === "object" && error !== null) {
@@ -2322,6 +2307,22 @@ async function processGitDataSyncJob(
 			);
 			return;
 		}
+		case "repo_events": {
+			const perPage = payload.perPage ?? 30;
+			const data = await fetchRepoEventsFromGitHub(
+				authCtx.octokit,
+				owner,
+				repo,
+				perPage,
+			);
+			await upsertGithubCacheEntry(
+				authCtx.userId,
+				buildRepoEventsCacheKey(owner, repo, perPage),
+				"repo_events",
+				data,
+			);
+			return;
+		}
 		case "repo_nav_counts": {
 			const openIssuesAndPrs = payload.openIssuesAndPrs ?? 0;
 			const data = await fetchRepoNavCountsFromGitHub(
@@ -2495,8 +2496,12 @@ export async function getAuthenticatedUser() {
 	return authCtx?.githubUser ?? null;
 }
 
-export async function getUserRepos(sort: RepoSort = "updated", perPage = 30) {
-	const authCtx = await getGitHubAuthContext();
+export async function getUserRepos(
+	sort: RepoSort = "updated",
+	perPage = 30,
+	authOverride?: GitHubAuthOverride,
+) {
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	const cacheKey = buildUserReposCacheKey(sort, perPage);
 
 	return readLocalFirstGitData({
@@ -2510,8 +2515,8 @@ export async function getUserRepos(sort: RepoSort = "updated", perPage = 30) {
 	});
 }
 
-export async function getUserOrgs(perPage = 50) {
-	const authCtx = await getGitHubAuthContext();
+export async function getUserOrgs(perPage = 50, authOverride?: GitHubAuthOverride) {
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	return readLocalFirstGitData({
 		authCtx,
 		cacheKey: buildUserOrgsCacheKey(perPage),
@@ -2534,8 +2539,9 @@ export async function getOrgRepos(
 		sort?: OrgRepoSort;
 		type?: OrgRepoType;
 	} = {},
+	authOverride?: GitHubAuthOverride,
 ) {
-	const authCtx = await getGitHubAuthContext();
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	return readLocalFirstGitData({
 		authCtx,
 		cacheKey: buildOrgReposCacheKey(org, sort, type, perPage),
@@ -2781,8 +2787,9 @@ export async function getRepoTree(
 	repo: string,
 	treeSha: string,
 	recursive?: boolean,
+	authOverride?: GitHubAuthOverride,
 ) {
-	const authCtx = await getGitHubAuthContext();
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	const recursiveFlag = recursive === true;
 	const cacheKey = buildRepoTreeCacheKey(owner, repo, treeSha, recursiveFlag);
 
@@ -2798,8 +2805,12 @@ export async function getRepoTree(
 	});
 }
 
-export async function getRepoBranches(owner: string, repo: string) {
-	const authCtx = await getGitHubAuthContext();
+export async function getRepoBranches(
+	owner: string,
+	repo: string,
+	authOverride?: GitHubAuthOverride,
+) {
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	const cacheKey = buildRepoBranchesCacheKey(owner, repo);
 
 	return readLocalFirstGitData({
@@ -2813,8 +2824,8 @@ export async function getRepoBranches(owner: string, repo: string) {
 	});
 }
 
-export async function getRepoTags(owner: string, repo: string) {
-	const authCtx = await getGitHubAuthContext();
+export async function getRepoTags(owner: string, repo: string, authOverride?: GitHubAuthOverride) {
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	const cacheKey = buildRepoTagsCacheKey(owner, repo);
 
 	return readLocalFirstGitData({
@@ -2828,8 +2839,12 @@ export async function getRepoTags(owner: string, repo: string) {
 	});
 }
 
-export async function getRepoReleases(owner: string, repo: string) {
-	const authCtx = await getGitHubAuthContext();
+export async function getRepoReleases(
+	owner: string,
+	repo: string,
+	authOverride?: GitHubAuthOverride,
+) {
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	const cacheKey = buildRepoReleasesCacheKey(owner, repo);
 
 	const releases = await readLocalFirstGitData({
@@ -2929,8 +2944,13 @@ export async function getFileContent(owner: string, repo: string, path: string, 
 	});
 }
 
-export async function getRepoReadme(owner: string, repo: string, ref?: string) {
-	const authCtx = await getGitHubAuthContext();
+export async function getRepoReadme(
+	owner: string,
+	repo: string,
+	ref?: string,
+	authOverride?: GitHubAuthOverride,
+) {
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	const normalizedRef = normalizeRef(ref);
 	const cacheKey = buildRepoReadmeCacheKey(owner, repo, normalizedRef);
 
@@ -4044,8 +4064,9 @@ export async function getRepoIssues(
 	owner: string,
 	repo: string,
 	state: "open" | "closed" | "all" = "open",
+	authOverride?: GitHubAuthOverride,
 ) {
-	const authCtx = await getGitHubAuthContext();
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	return readLocalFirstGitData({
 		authCtx,
 		cacheKey: buildRepoIssuesCacheKey(owner, repo, state),
@@ -4584,8 +4605,9 @@ function buildRepoDiscussionsCacheKey(owner: string, repo: string): string {
 export async function getRepoDiscussionsPage(
 	owner: string,
 	repo: string,
+	authOverride?: GitHubAuthOverride,
 ): Promise<RepoDiscussionsPageData> {
-	const authCtx = await getGitHubAuthContext();
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	const fallback: RepoDiscussionsPageData = {
 		discussions: [],
 		totalCount: 0,
@@ -5202,8 +5224,9 @@ export async function getRepoPullRequests(
 	owner: string,
 	repo: string,
 	state: "open" | "closed" | "all" = "open",
+	authOverride?: GitHubAuthOverride,
 ) {
-	const authCtx = await getGitHubAuthContext();
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	return readLocalFirstGitData({
 		authCtx,
 		cacheKey: buildRepoPullRequestsCacheKey(owner, repo, state),
@@ -6320,8 +6343,13 @@ export async function getRepoWorkflows(owner: string, repo: string) {
 	});
 }
 
-export async function getRepoWorkflowRuns(owner: string, repo: string, perPage = 50) {
-	const authCtx = await getGitHubAuthContext();
+export async function getRepoWorkflowRuns(
+	owner: string,
+	repo: string,
+	perPage = 50,
+	authOverride?: GitHubAuthOverride,
+) {
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	return readLocalFirstGitData({
 		authCtx,
 		cacheKey: buildRepoWorkflowRunsCacheKey(owner, repo, perPage),
@@ -6419,11 +6447,12 @@ export async function getRepoContributors(
 	owner: string,
 	repo: string,
 	perPage = 20,
+	authOverride?: GitHubAuthOverride,
 ): Promise<{
 	list: { login: string; avatar_url: string; contributions: number; html_url: string }[];
 	totalCount: number;
 }> {
-	const authCtx = await getGitHubAuthContext();
+	const authCtx = await resolveGitHubAuthContext(authOverride);
 	return readLocalFirstGitData({
 		authCtx,
 		cacheKey: buildRepoContributorsCacheKey(owner, repo, perPage),
@@ -6948,13 +6977,11 @@ export const getRepoPageData = cache(
 	},
 );
 
-export async function fetchAndCacheRepoPageData(
+export async function fetchAndCacheRepoPageDataWithAuth(
+	authCtx: GitHubAuthContext,
 	owner: string,
 	repo: string,
 ): Promise<RepoPageDataResult> {
-	const authCtx = await getGitHubAuthContext();
-	if (!authCtx) return { success: false, error: "Not authenticated" };
-
 	try {
 		const result = await fetchRepoPageDataGraphQL(authCtx.token, owner, repo);
 		if (!result) return { success: false, error: "Repository not found" };
@@ -6987,6 +7014,15 @@ export async function fetchAndCacheRepoPageData(
 	}
 }
 
+export async function fetchAndCacheRepoPageData(
+	owner: string,
+	repo: string,
+): Promise<RepoPageDataResult> {
+	const authCtx = await getGitHubAuthContext();
+	if (!authCtx) return { success: false, error: "Not authenticated" };
+	return fetchAndCacheRepoPageDataWithAuth(authCtx, owner, repo);
+}
+
 export async function getRepoOverviewData(
 	owner: string,
 	repo: string,
@@ -7003,21 +7039,36 @@ export async function getRepoOverviewData(
 	};
 }
 
-export async function getRepoEvents(owner: string, repo: string, perPage = 30) {
-	const octokit = await getOctokit();
-	if (!octokit) return [];
+export async function getRepoEvents(
+	owner: string,
+	repo: string,
+	perPage = 30,
+	authOverride?: GitHubAuthOverride,
+) {
+	const authCtx = await resolveGitHubAuthContext(authOverride);
+	return readLocalFirstGitData({
+		authCtx,
+		cacheKey: buildRepoEventsCacheKey(owner, repo, perPage),
+		cacheType: "repo_events",
+		fallback: [],
+		jobType: "repo_events",
+		jobPayload: { owner, repo, perPage },
+		fetchRemote: (octokit) => fetchRepoEventsFromGitHub(octokit, owner, repo, perPage),
+	});
+}
 
-	try {
-		const { data } = await octokit.activity.listRepoEvents({
-			owner,
-			repo,
-			per_page: perPage,
-		});
-		return data;
-	} catch (error) {
-		rethrowKnownGitHubErrors(error);
-		return [];
-	}
+async function fetchRepoEventsFromGitHub(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	perPage: number,
+) {
+	const { data } = await octokit.activity.listRepoEvents({
+		owner,
+		repo,
+		per_page: perPage,
+	});
+	return data;
 }
 
 export interface PersonRepoActivity {
