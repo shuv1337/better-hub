@@ -8,7 +8,7 @@ import { CodeContentWrapper } from "@/components/repo/code-content-wrapper";
 import { RepoLayoutWrapper } from "@/components/repo/repo-layout-wrapper";
 import { ChatPageActivator } from "@/components/shared/chat-page-activator";
 import { RepoRevalidator } from "@/components/repo/repo-revalidator";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import {
 	REPO_SIDEBAR_COOKIE,
 	type RepoSidebarState,
@@ -146,6 +146,8 @@ export default async function RepoLayout({
 	const promptRequestsCount = await promptCountPromise;
 
 	const cookieStore = await cookies();
+	const headersList = await headers();
+	const initialPathname = headersList.get("x-pathname") ?? `/${owner}/${repoName}`;
 	const sidebarCookie = cookieStore.get(REPO_SIDEBAR_COOKIE);
 	let sidebarState: RepoSidebarState | null = null;
 	if (sidebarCookie?.value) {
@@ -248,6 +250,7 @@ export default async function RepoLayout({
 					<RepoNav
 						owner={owner}
 						repo={repoName}
+						initialPathname={initialPathname}
 						openIssuesCount={navCounts.openIssues}
 						openPrsCount={navCounts.openPrs}
 						activeRunsCount={navCounts.activeRuns}
@@ -260,6 +263,7 @@ export default async function RepoLayout({
 				<CodeContentWrapper
 					owner={owner}
 					repo={repoName}
+					initialPathname={initialPathname}
 					defaultBranch={repoData.default_branch}
 					tree={tree}
 					initialBranches={cachedBranches}

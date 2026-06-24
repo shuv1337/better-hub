@@ -70,7 +70,9 @@ describe("github cache warm API route", () => {
 		for (const helper of Object.values(githubCacheWarmer)) helper.mockReset();
 		inngestModule.inngest.send.mockReset();
 		nextHeaders.headers.mockResolvedValue(new Headers());
-		authModule.auth.api.getSession.mockResolvedValue({ user: { id: "user-1" } });
+		authModule.auth.api.getSession.mockResolvedValue({
+			user: { id: "user-1", role: "admin" },
+		});
 		githubCacheLock.acquireGithubCacheWarmLock.mockResolvedValue({
 			acquired: true,
 			lockKey: "github-cache-warm-lock:user-1",
@@ -106,6 +108,43 @@ describe("github cache warm API route", () => {
 		expect(githubCacheLock.releaseGithubCacheWarmLock).toHaveBeenCalledWith(
 			"user-1",
 			"run-1",
+		);
+	});
+
+	it("rejects authenticated users who are not allowed to use the debug surface", async () => {
+		authModule.auth.api.getSession.mockResolvedValue({
+			user: { id: "user-2", role: "user" },
+		});
+
+		const { POST } = await import("./route");
+		const response = await POST(warmRequest({ mode: "quick", maxRepos: 5 }));
+
+		expect(response.status).toBe(403);
+		expect(githubCacheLock.acquireGithubCacheWarmLock).not.toHaveBeenCalled();
+		expect(inngestModule.inngest.send).not.toHaveBeenCalled();
+	});
+
+	it("returns actionable disabled guidance when no warm path is enabled", async () => {
+		emitRandomUuid("run-disabled");
+		vi.stubEnv("GITHUB_CACHE_WARM_INLINE", "0");
+		vi.stubEnv("GITHUB_CACHE_WARM_PROD_ENABLED", "0");
+
+		const { POST } = await import("./route");
+		const response = await POST(warmRequest({ mode: "full", maxRepos: 5 }));
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body).toMatchObject({
+			accepted: false,
+			runId: "run-disabled",
+			skippedReason: "disabled",
+			message: "GitHub cache warming is disabled by configuration.",
+			blockedBy: ["GITHUB_CACHE_WARM_PROD_ENABLED"],
+		});
+		expect(body.remediation).toContain("GITHUB_CACHE_WARM_PROD_ENABLED=1");
+		expect(githubCacheLock.releaseGithubCacheWarmLock).toHaveBeenCalledWith(
+			"user-1",
+			"run-disabled",
 		);
 	});
 

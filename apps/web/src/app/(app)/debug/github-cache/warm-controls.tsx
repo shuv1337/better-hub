@@ -10,6 +10,21 @@ interface WarmResponse {
 	runId?: string;
 	skippedReason?: string;
 	error?: string;
+	message?: string;
+	blockedBy?: string[];
+	remediation?: string;
+}
+
+export function formatWarmResponseMessage(mode: WarmMode, data: WarmResponse): string {
+	if (data.accepted) return `${mode} warm accepted: ${data.runId ?? "inline"}`;
+	return [
+		`${mode} warm skipped: ${data.skippedReason ?? "unknown"}`,
+		data.message,
+		data.blockedBy?.length ? `Blocked by: ${data.blockedBy.join(", ")}` : null,
+		data.remediation,
+	]
+		.filter(Boolean)
+		.join(" ");
 }
 
 export function GithubCacheWarmControls() {
@@ -31,11 +46,7 @@ export function GithubCacheWarmControls() {
 				setMessage(data.error ?? "Warm request failed");
 				return;
 			}
-			setMessage(
-				data.accepted
-					? `${mode} warm accepted: ${data.runId ?? "inline"}`
-					: `${mode} warm skipped: ${data.skippedReason ?? "unknown"}`,
-			);
+			setMessage(formatWarmResponseMessage(mode, data));
 			router.refresh();
 		} catch {
 			setMessage("Warm request could not reach the API");

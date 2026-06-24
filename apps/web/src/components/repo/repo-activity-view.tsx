@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { cn, formatNumber } from "@/lib/utils";
 import type { CommitActivityWeek } from "@/lib/github";
 
@@ -155,6 +156,7 @@ interface RepoActivityViewProps {
 }
 
 export function RepoActivityView({ owner, repo, events, commitActivity }: RepoActivityViewProps) {
+	const router = useRouter();
 	const base = `/${owner}/${repo}`;
 	const [filter, setFilter] = useState<"all" | "push" | "pr" | "issue">("all");
 
@@ -308,8 +310,47 @@ export function RepoActivityView({ owner, repo, events, commitActivity }: RepoAc
 							event,
 							base,
 						);
+						const isLinked = !!href;
 						const inner = (
-							<div className="flex items-start gap-3 py-2.5 px-3 rounded-md transition-colors hover:bg-muted/30 group border border-transparent hover:border-border/30">
+							<div
+								role={isLinked ? "link" : undefined}
+								tabIndex={isLinked ? 0 : undefined}
+								onClick={
+									href
+										? () =>
+												router.push(
+													href,
+												)
+										: undefined
+								}
+								onKeyDown={
+									href
+										? (e) => {
+												if (
+													e.target !==
+													e.currentTarget
+												)
+													return;
+												if (
+													e.key !==
+														"Enter" &&
+													e.key !==
+														" "
+												)
+													return;
+												e.preventDefault();
+												router.push(
+													href,
+												);
+											}
+										: undefined
+								}
+								className={cn(
+									"flex items-start gap-3 py-2.5 px-3 rounded-md transition-colors hover:bg-muted/30 group border border-transparent hover:border-border/30",
+									isLinked &&
+										"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+								)}
+							>
 								{event.actor?.avatar_url ? (
 									<Link
 										href={`/users/${event.actor.login}`}
@@ -387,19 +428,16 @@ export function RepoActivityView({ owner, repo, events, commitActivity }: RepoAc
 										</p>
 									)}
 								</div>
-								<span className="text-[10px] font-mono text-muted-foreground shrink-0 mt-1">
+								<span
+									className="text-[10px] font-mono text-muted-foreground shrink-0 mt-1"
+									suppressHydrationWarning
+								>
 									{timeAgo(event.created_at)}
 								</span>
 							</div>
 						);
 
-						return href ? (
-							<Link key={i} href={href}>
-								{inner}
-							</Link>
-						) : (
-							<div key={i}>{inner}</div>
-						);
+						return <div key={i}>{inner}</div>;
 					})
 				)}
 			</div>

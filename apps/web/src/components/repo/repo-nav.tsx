@@ -17,6 +17,7 @@ interface RepoNavProps {
 	hasDiscussions?: boolean;
 	discussionsCount?: number;
 	promptRequestsCount?: number;
+	initialPathname: string;
 
 	showPeopleTab?: boolean;
 }
@@ -30,10 +31,12 @@ export function RepoNav({
 	hasDiscussions,
 	discussionsCount,
 	promptRequestsCount,
+	initialPathname,
 
 	showPeopleTab,
 }: RepoNavProps) {
-	const pathname = usePathname();
+	const livePathname = usePathname();
+	const [pathname, setPathname] = useState(initialPathname);
 	const base = `/${owner}/${repo}`;
 	const containerRef = useRef<HTMLDivElement>(null);
 	const [indicator, setIndicator] = useState({ left: 0, width: 0 });
@@ -43,6 +46,10 @@ export function RepoNav({
 	useEffect(() => {
 		setCountAdjustments({ prs: 0, issues: 0, prompts: 0 });
 	}, [openPrsCount, openIssuesCount, promptRequestsCount]);
+
+	useEffect(() => {
+		setPathname(livePathname);
+	}, [livePathname]);
 
 	useMutationSubscription(
 		[

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { PanelLeft, Copy, Check, Download, Monitor } from "lucide-react";
@@ -18,6 +18,7 @@ import {
 interface CodeContentWrapperProps {
 	owner: string;
 	repo: string;
+	initialPathname: string;
 	defaultBranch: string;
 	tree: FileTreeNode[] | null;
 	initialBranches?: { name: string }[] | null;
@@ -144,14 +145,20 @@ function CloneDownloadButtons({
 export function CodeContentWrapper({
 	owner,
 	repo,
+	initialPathname,
 	defaultBranch,
 	tree,
 	initialBranches,
 	initialTags,
 	children,
 }: CodeContentWrapperProps) {
-	const pathname = usePathname();
+	const livePathname = usePathname();
+	const [pathname, setPathname] = useState(initialPathname);
 	const base = `/${owner}/${repo}`;
+
+	useEffect(() => {
+		setPathname(livePathname);
+	}, [livePathname]);
 
 	const isCodeRoute =
 		pathname === `${base}/code` ||

@@ -782,7 +782,10 @@ function TickerCard({ item }: { item: HotItem }) {
 					<span className="text-[10px] font-mono text-muted-foreground/70 truncate">
 						{item.user?.login ?? "unknown"}
 					</span>
-					<span className="text-[10px] font-mono text-muted-foreground/60 ml-auto shrink-0">
+					<span
+						className="text-[10px] font-mono text-muted-foreground/60 ml-auto shrink-0"
+						suppressHydrationWarning
+					>
 						{timeAgo(item.createdAt)}
 					</span>
 					{item.comments > 0 && (

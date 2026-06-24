@@ -1,4 +1,5 @@
 import { getServerSession } from "@/lib/auth";
+import { getGithubCacheDebugAccess } from "@/lib/github-cache-debug-access";
 import { getGithubCacheWarmLockStatus, getGithubCacheWarmResult } from "@/lib/github-cache-lock";
 import {
 	getRepoCacheStatus,
@@ -6,6 +7,7 @@ import {
 	type RepoCacheStatusEntry,
 } from "@/lib/github-cache-status";
 import { getGithubSyncJobStatusSummary } from "@/lib/github-sync-store";
+import { notFound } from "next/navigation";
 import { GithubCacheWarmControls } from "./warm-controls";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -237,6 +239,9 @@ export default async function GithubCacheDebugPage({
 	searchParams: Promise<SearchParams>;
 }) {
 	const session = await getServerSession();
+	const access = getGithubCacheDebugAccess(session);
+	if (!access.allowed) notFound();
+
 	const params = await searchParams;
 	const owner = singleParam(params.owner).trim();
 	const repo = singleParam(params.repo).trim();

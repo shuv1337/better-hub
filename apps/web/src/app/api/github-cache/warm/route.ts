@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
+import { getGithubCacheDebugAccess } from "@/lib/github-cache-debug-access";
 import { resolveGitHubAuthContextForUser } from "@/lib/github-auth-context";
 import {
 	acquireGithubCacheWarmLock,
@@ -51,6 +52,19 @@ function isInlineWarmEnabled(): boolean {
 
 function isProductionWarmEnabled(): boolean {
 	return process.env.GITHUB_CACHE_WARM_PROD_ENABLED === "1";
+}
+
+function warmDisabledDetails() {
+	const isProd = process.env.NODE_ENV === "production";
+	return {
+		message: "GitHub cache warming is disabled by configuration.",
+		blockedBy: isProd
+			? ["GITHUB_CACHE_WARM_PROD_ENABLED"]
+			: ["GITHUB_CACHE_WARM_INLINE", "GITHUB_CACHE_WARM_PROD_ENABLED"],
+		remediation: isProd
+			? "Set GITHUB_CACHE_WARM_PROD_ENABLED=1 and configure Inngest for production warming."
+			: "Set GITHUB_CACHE_WARM_INLINE=1 for local inline warming, or set GITHUB_CACHE_WARM_PROD_ENABLED=1 with Inngest configured.",
+	};
 }
 
 async function parseWarmOptions(
@@ -147,6 +161,10 @@ export async function POST(request: Request) {
 	if (!session?.user?.id) {
 		return Response.json({ error: "Unauthorized" }, { status: 401 });
 	}
+	const access = getGithubCacheDebugAccess(session);
+	if (!access.allowed) {
+		return Response.json({ error: "Forbidden" }, { status: 403 });
+	}
 
 	const parsed = await parseWarmOptions(request);
 	if (!parsed.ok) return parsed.response;
@@ -166,6 +184,7 @@ export async function POST(request: Request) {
 	}
 
 	if (!isProductionWarmEnabled()) {
+		const disabledDetails = warmDisabledDetails();
 		const run = makeRun(runId, lockKey, "inngest");
 		const result = createGithubCacheWarmSkippedResult({
 			userId,
@@ -178,6 +197,7 @@ export async function POST(request: Request) {
 			accepted: false,
 			runId,
 			skippedReason: "disabled",
+			...disabledDetails,
 		});
 	}
 

@@ -570,11 +570,28 @@ async function fetchRepoReadmeFromGitHub(
 	ref?: string,
 ) {
 	try {
-		const { data } = await octokit.repos.getReadme({
+		const root = await octokit.repos.getContent({
 			owner,
 			repo,
+			path: "",
 			...(ref ? { ref } : {}),
 		});
+		if (!Array.isArray(root.data)) return null;
+		const readme = root.data.find(
+			(item) =>
+				item.type === "file" &&
+				typeof item.name === "string" &&
+				/^readme(?:\.|$)/i.test(item.name),
+		);
+		if (!readme?.path) return null;
+
+		const { data } = await octokit.repos.getContent({
+			owner,
+			repo,
+			path: readme.path,
+			...(ref ? { ref } : {}),
+		});
+		if (Array.isArray(data) || data.type !== "file") return null;
 		const content = Buffer.from(data.content, "base64").toString("utf-8");
 		return { ...data, content };
 	} catch {
