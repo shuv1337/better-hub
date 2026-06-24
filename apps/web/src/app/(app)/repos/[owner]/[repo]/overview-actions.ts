@@ -13,8 +13,6 @@ import {
 } from "@/lib/repo-overview-cache-warmer";
 import type { CheckStatus, CommitActivityWeek } from "@/lib/github";
 
-export type { OverviewIssueItem, OverviewPRItem, OverviewRepoEvent };
-
 export async function fetchOverviewPRs(owner: string, repo: string): Promise<OverviewPRItem[]> {
 	return warmOverviewPRs(owner, repo);
 }

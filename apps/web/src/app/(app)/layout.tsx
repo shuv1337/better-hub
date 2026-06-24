@@ -22,8 +22,8 @@ import { GithubCacheWarmer } from "./github-cache-warmer";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
 	const session = await getServerSession();
+	const headersList = await headers();
 	if (!session) {
-		const headersList = await headers();
 		const pathname = headersList.get("x-pathname") || "";
 		const redirectTo =
 			pathname && pathname !== "/"
@@ -83,6 +83,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 												}
 												notifications={
 													notifications
+												}
+												initialPathname={
+													headersList.get(
+														"x-pathname",
+													) ||
+													""
 												}
 											/>
 											<NavAwareContent>

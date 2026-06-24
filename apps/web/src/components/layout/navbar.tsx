@@ -44,13 +44,15 @@ import { APP_ROUTES } from "@/app-routes";
 interface AppNavbarProps {
 	session: $Session;
 	notifications: NotificationItem[];
+	initialPathname: string;
 }
 
-export function AppNavbar({ session, notifications }: AppNavbarProps) {
+export function AppNavbar({ session, notifications, initialPathname }: AppNavbarProps) {
 	const { mode, toggleMode } = useColorTheme();
 	const { subscribe } = useMutationEvents();
 	const { isNavHidden } = useNavVisibility();
-	const pathname = usePathname();
+	const currentPathname = usePathname();
+	const [pathname, setPathname] = useState(initialPathname || currentPathname);
 	const segments = pathname.split("/").filter(Boolean);
 	const isRepoPage = segments.length >= 2 && !APP_ROUTES.has(segments[0]);
 	const gh = session.githubUser;
@@ -71,6 +73,10 @@ export function AppNavbar({ session, notifications }: AppNavbarProps) {
 			}
 		});
 	}, [subscribe]);
+
+	useEffect(() => {
+		setPathname(currentPathname);
+	}, [currentPathname]);
 
 	const visibleNotifs = notifications.filter((n) => !doneIds.has(n.id));
 	const unreadCount = visibleNotifs.filter((n) => n.unread).length;

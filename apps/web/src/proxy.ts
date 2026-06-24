@@ -8,6 +8,8 @@ const GIT_SERVICES = new Set(["git-upload-pack", "git-receive-pack"]);
 
 export default async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
+	const requestHeaders = new Headers(request.headers);
+	requestHeaders.set("x-pathname", pathname);
 	const segments = pathname.split("/").filter(Boolean);
 	const repoPath = segments.slice(2).join("/");
 
@@ -26,7 +28,9 @@ export default async function middleware(request: NextRequest) {
 	const isPublic = publicPaths.some(
 		(path) => pathname === path || pathname.startsWith(path + "/"),
 	);
-	if (isPublic) return NextResponse.next();
+	if (isPublic) {
+		return NextResponse.next({ request: { headers: requestHeaders } });
+	}
 
 	const sessionCookie = getSessionCookie(request.headers);
 	if (!sessionCookie) {
@@ -36,12 +40,12 @@ export default async function middleware(request: NextRequest) {
 	// Handle URL rewriting for GitHub-style routes
 	// Skip app routes, API routes, and Next.js internals
 	if (segments.length === 0 || APP_ROUTES.has(segments[0])) {
-		return NextResponse.next();
+		return NextResponse.next({ request: { headers: requestHeaders } });
 	}
 
 	// Need at least /:owner/:repo
 	if (segments.length < 2) {
-		return NextResponse.next();
+		return NextResponse.next({ request: { headers: requestHeaders } });
 	}
 
 	const owner = segments[0];
@@ -52,21 +56,21 @@ export default async function middleware(request: NextRequest) {
 	if (rest[0] === "pull" && rest[1]) {
 		const url = request.nextUrl.clone();
 		url.pathname = `/repos/${owner}/${repo}/pulls/${rest.slice(1).join("/")}`;
-		return NextResponse.rewrite(url);
+		return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
 	}
 
 	// /:owner/:repo/commit/:sha → /repos/:owner/:repo/commits/:sha
 	if (rest[0] === "commit" && rest[1]) {
 		const url = request.nextUrl.clone();
 		url.pathname = `/repos/${owner}/${repo}/commits/${rest.slice(1).join("/")}`;
-		return NextResponse.rewrite(url);
+		return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
 	}
 
 	// /:owner/:repo/actions/runs/:runId → /repos/:owner/:repo/actions/:runId
 	if (rest[0] === "actions" && rest[1] === "runs" && rest[2]) {
 		const url = request.nextUrl.clone();
 		url.pathname = `/repos/${owner}/${repo}/actions/${rest.slice(2).join("/")}`;
-		return NextResponse.rewrite(url);
+		return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
 	}
 
 	// /:owner/:repo/compare/base...head (GitHub Desktop / gh pr create) → /repos/:owner/:repo/pulls/new?base=&head=&title=&body=
@@ -90,7 +94,7 @@ export default async function middleware(request: NextRequest) {
 	// Generic: /:owner/:repo/... → /repos/:owner/:repo/...
 	const url = request.nextUrl.clone();
 	url.pathname = `/repos/${segments.join("/")}`;
-	return NextResponse.rewrite(url);
+	return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
 }
 
 export const config = {
