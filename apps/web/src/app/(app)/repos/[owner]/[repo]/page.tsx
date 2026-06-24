@@ -11,7 +11,7 @@ import {
 } from "@/lib/repo-data-cache";
 import { ogImageUrl, ogImages } from "@/lib/og/og-utils";
 import { fetchPinnedItemsForRepo } from "./pin-actions";
-import { revalidateReadme } from "./readme-actions";
+import { getRepoReadmeHtmlCacheFirst } from "@/lib/repo-overview-cache-warmer";
 
 export async function generateMetadata({
 	params,
@@ -55,7 +55,9 @@ export default async function RepoPage({
 		initialCIStatus,
 		initialPinnedItems,
 	] = (await Promise.all([
-		isEmptyRepo ? null : revalidateReadme(owner, repo, repoData.default_branch),
+		isEmptyRepo
+			? null
+			: getRepoReadmeHtmlCacheFirst(owner, repo, repoData.default_branch),
 		isMaintainer ? getCachedOverviewPRs(owner, repo) : null,
 		isMaintainer ? getCachedOverviewIssues(owner, repo) : null,
 		isMaintainer ? getCachedOverviewEvents(owner, repo) : null,

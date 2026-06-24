@@ -1,8 +1,7 @@
 "use server";
 
-import { fetchAndCacheRepoPageData, getRepoTree } from "@/lib/github";
-import { buildFileTree } from "@/lib/file-tree";
-import { setCachedRepoTree } from "@/lib/repo-data-cache";
+import { fetchAndCacheRepoPageData } from "@/lib/github";
+import { warmRepoFileTreeForLayout } from "@/lib/repo-overview-cache-warmer";
 
 export async function revalidateRepoPageData(owner: string, repo: string): Promise<void> {
 	await fetchAndCacheRepoPageData(owner, repo);
@@ -13,11 +12,5 @@ export async function revalidateRepoTree(
 	repo: string,
 	defaultBranch: string,
 ): Promise<void> {
-	const treeResult = await getRepoTree(owner, repo, defaultBranch, true);
-	if (treeResult && !treeResult.truncated && treeResult.tree) {
-		const tree = buildFileTree(
-			treeResult.tree as { path: string; type: string; size?: number }[],
-		);
-		await setCachedRepoTree(owner, repo, tree);
-	}
+	await warmRepoFileTreeForLayout(owner, repo, defaultBranch);
 }

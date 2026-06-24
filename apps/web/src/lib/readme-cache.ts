@@ -1,7 +1,8 @@
 import { redis } from "./redis";
+import { githubCacheKeys } from "./github-cache-descriptors";
 
 function readmeKey(owner: string, repo: string): string {
-	return `readme_html:${owner.toLowerCase()}/${repo.toLowerCase()}`;
+	return githubCacheKeys.readmeHtml(owner, repo);
 }
 
 export async function getCachedReadmeHtml(owner: string, repo: string): Promise<string | null> {

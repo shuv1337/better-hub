@@ -38,6 +38,14 @@ export async function getGithubCacheEntry<T>(
 	return entry ?? null;
 }
 
+export async function getGithubCacheEntrySyncedAt(
+	userId: string,
+	cacheKey: string,
+): Promise<string | null> {
+	const entry = await getGithubCacheEntry<unknown>(userId, cacheKey);
+	return entry?.syncedAt ?? null;
+}
+
 export async function upsertGithubCacheEntry<T>(
 	userId: string,
 	cacheKey: string,
@@ -122,34 +130,75 @@ export async function enqueueGithubSyncJob<TPayload>(
 	payload: TPayload,
 ) {
 	const now = new Date().toISOString();
+	const payloadJson = JSON.stringify(payload);
+	const existing = await prisma.githubSyncJob.findUnique({
+		where: { userId_dedupeKey: { userId, dedupeKey } },
+		select: { id: true, status: true },
+	});
+
+	if (existing?.status === "running") return;
+
+	if (existing?.status === "failed") {
+		await prisma.githubSyncJob.updateMany({
+			where: { id: existing.id, status: "failed" },
+			data: {
+				jobType,
+				payloadJson,
+				status: "pending",
+				attempts: 0,
+				nextAttemptAt: now,
+				startedAt: null,
+				lastError: null,
+				updatedAt: now,
+			},
+		});
+		return;
+	}
+
+	if (existing?.status === "pending") {
+		await prisma.githubSyncJob.updateMany({
+			where: { id: existing.id, status: "pending" },
+			data: {
+				jobType,
+				payloadJson,
+				nextAttemptAt: now,
+				updatedAt: now,
+			},
+		});
+		return;
+	}
 
 	try {
-		await prisma.githubSyncJob.upsert({
-			where: { userId_dedupeKey: { userId, dedupeKey } },
-			create: {
+		await prisma.githubSyncJob.create({
+			data: {
 				userId,
 				dedupeKey,
 				jobType,
-				payloadJson: JSON.stringify(payload),
+				payloadJson,
 				status: "pending",
 				attempts: 0,
 				nextAttemptAt: now,
 				createdAt: now,
 				updatedAt: now,
 			},
-			update: {},
 		});
 	} catch (e) {
-		if (
-			e instanceof Prisma.PrismaClientKnownRequestError &&
-			(e.code === "P2002" || e.code === "P2025")
-		) {
+		if (isKnownPrismaRequestError(e) && (e.code === "P2002" || e.code === "P2025")) {
 			// P2002: unique constraint violation (concurrent insert race)
-			// P2025: record not found during upsert (concurrent insert + delete race)
+			// P2025: record not found during create/delete race
 			return;
 		}
 		throw e;
 	}
+}
+
+function isKnownPrismaRequestError(error: unknown): error is Prisma.PrismaClientKnownRequestError {
+	if (error instanceof Prisma.PrismaClientKnownRequestError) return true;
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		typeof (error as { code?: unknown }).code === "string"
+	);
 }
 
 async function recoverTimedOutRunningJobs(userId: string) {
@@ -233,4 +282,70 @@ export async function markGithubSyncJobFailed(id: number, attempts: number, erro
 			updatedAt: nowIso,
 		},
 	});
+}
+
+export interface GithubSyncJobStatusSummary {
+	counts: Record<GithubSyncJobStatus, number>;
+	failed: Array<{
+		id: number;
+		dedupeKey: string;
+		jobType: string;
+		attempts: number;
+		lastError: string | null;
+		updatedAt: string;
+	}>;
+}
+
+export async function getGithubSyncJobStatusSummary(
+	userId: string,
+	options: { dedupeKeyContains?: string; failedLimit?: number } = {},
+): Promise<GithubSyncJobStatusSummary> {
+	const where = {
+		userId,
+		...(options.dedupeKeyContains
+			? { dedupeKey: { contains: options.dedupeKeyContains } }
+			: {}),
+	};
+	const rows = await prisma.githubSyncJob.findMany({
+		where,
+		select: {
+			id: true,
+			dedupeKey: true,
+			jobType: true,
+			status: true,
+			attempts: true,
+			lastError: true,
+			updatedAt: true,
+		},
+		orderBy: [{ status: "asc" }, { updatedAt: "desc" }, { id: "asc" }],
+	});
+	const counts: Record<GithubSyncJobStatus, number> = {
+		pending: 0,
+		running: 0,
+		failed: 0,
+	};
+	const failedLimit = options.failedLimit ?? 10;
+	const failed: GithubSyncJobStatusSummary["failed"] = [];
+
+	for (const row of rows) {
+		if (
+			row.status === "pending" ||
+			row.status === "running" ||
+			row.status === "failed"
+		) {
+			counts[row.status] += 1;
+		}
+		if (row.status === "failed" && failed.length < failedLimit) {
+			failed.push({
+				id: row.id,
+				dedupeKey: row.dedupeKey,
+				jobType: row.jobType,
+				attempts: row.attempts,
+				lastError: row.lastError,
+				updatedAt: row.updatedAt,
+			});
+		}
+	}
+
+	return { counts, failed };
 }

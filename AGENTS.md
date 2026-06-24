@@ -9,3 +9,18 @@
 
 - Try to follow the design of the rest of the site as much as possible.
 - Avoid loading spinners and prefer skeleton UI for loading states.
+
+## GitHub Cache Runbook
+
+- Shared GitHub cache reads use ghpub:* and are controlled by GITHUB_CACHE_SHARED_READ (1 by default, set 0 only for rollback/emergency response).
+- Browser warm is gated by NEXT_PUBLIC_GITHUB_CACHE_WARM_ENABLED; keep it 0 unless intentionally enabling browser-session warm.
+- Local/dev warm may run inline with GITHUB_CACHE_WARM_INLINE=1. Production warm requires GITHUB_CACHE_WARM_PROD_ENABLED=1 and Inngest configuration.
+- Warm modes: quick warms first-navigation repo overview/layout targets; full adds releases, discussions, commit activity, and force-refreshed user-scoped response caches.
+- Discovery caps (env): `GITHUB_CACHE_WARM_DISCOVERY_USER_REPOS` (default 100), `GITHUB_CACHE_WARM_DISCOVERY_MAX_ORGS` (default 10), `GITHUB_CACHE_WARM_DISCOVERY_ORG_REPOS_PER_ORG` (default 50). Discovery lists use GitHub `pushed` sort; selected repos are merged, deduped, sorted by `pushed_at`, then sliced to `maxRepos` (API/body override or `GITHUB_CACHE_WARM_MAX_REPOS`). Budget rough order: 1 user-repos + 1 user-orgs + up to `maxOrgs` org-repos calls before warming begins (cached on repeat warms via local-first reads).
+- Debug UI: /debug/github-cache shows current user, warm lock state, last warm result, sync job counts/failures, and descriptor-backed per-repo cache target status. Do not add tokens or raw cached payloads to this page.
+- Redis key patterns: per-user GitHub responses use gh:{userId}:...; public shared responses use ghpub:*; UI fragments use keys such as repo_page_data:*, repo_file_tree:*, readme_html:*, overview_*, and github-cache-warm-last:{userId}.
+- Repo layout/overview fragment keys (readme_html, repo_file_tree, overview_*, repo_languages/branches/tags/contributor_avatars) are not user-prefixed; treat them as permission-gated-at-read — only load after a per-user repo permission check (e.g. getRepoPageData / maintainer gate). Never read these for private repos without that check.
+- Warm lock semantics: the API owns github-cache-warm-lock:{userId} with a generated runId; Inngest verifies/renews/releases only when the stored value still matches. Release must remain compare-and-delete.
+- Production worker auth must use resolveGitHubAuthContextForUser(userId), not request-scoped React cache() auth getters.
+- Do not expand the shareable-cache allowlist without a security review. Repo-scoped, org-scoped, viewer-specific, issue, PR, file/tree, workflow, branch/tag, release, contributor, nav-count, and private-repo data must not be written to ghpub:*.
+- Unsafe ghpub:* cleanup targets are ghpub:repo_*, ghpub:issue*, ghpub:pull_request*, ghpub:org:*, ghpub:org_repos:*, ghpub:org_members:*, ghpub:file_content:*, and ghpub:repo_contents:*. Validate scans preserve allowed public keys such as ghpub:user_profile:*, ghpub:user_public_orgs:*, ghpub:user_events:*, and ghpub:trending_repos:*.

@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { isShareableCacheType, isUnsafeSharedCacheType } from "./github-cache-policy";
+import { describe, expect, it, vi } from "vitest";
+import {
+	getGithubCachePolicy,
+	isFresh,
+	isShareableCacheType,
+	isUnsafeSharedCacheType,
+	shouldRefresh,
+} from "./github-cache-policy";
 
 describe("github cache shared policy", () => {
 	it("allows only public cache types to be shared", () => {
@@ -62,5 +68,38 @@ describe("github cache shared policy", () => {
 		expect(isUnsafeSharedCacheType("repo_anything_new")).toBe(true);
 		expect(isUnsafeSharedCacheType("issue_activity")).toBe(true);
 		expect(isUnsafeSharedCacheType("pull_request_timeline")).toBe(true);
+	});
+
+	it("returns V1 freshness policy defaults", () => {
+		expect(getGithubCachePolicy("ci")).toEqual({
+			freshForMs: 30 * 1000,
+			refreshAfterMs: 60 * 1000,
+			expireAfterMs: null,
+		});
+		expect(getGithubCachePolicy("repo-inventory")).toEqual({
+			freshForMs: 5 * 60 * 1000,
+			refreshAfterMs: 15 * 60 * 1000,
+			expireAfterMs: null,
+		});
+		expect(getGithubCachePolicy("stats")).toEqual({
+			freshForMs: 6 * 60 * 60 * 1000,
+			refreshAfterMs: 24 * 60 * 60 * 1000,
+			expireAfterMs: null,
+		});
+	});
+
+	it("classifies fresh and refreshable entries by data class", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-06-23T18:00:00.000Z"));
+		try {
+			expect(isFresh("2026-06-23T17:59:40.000Z", "ci")).toBe(true);
+			expect(isFresh("2026-06-23T17:59:20.000Z", "ci")).toBe(false);
+			expect(shouldRefresh("2026-06-23T17:59:20.000Z", "ci")).toBe(false);
+			expect(shouldRefresh("2026-06-23T17:58:59.000Z", "ci")).toBe(true);
+			expect(isFresh(null, "ci")).toBe(false);
+			expect(shouldRefresh(null, "ci")).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
