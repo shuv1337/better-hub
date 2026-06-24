@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	classifyGithubCacheWarmResponse,
 	GITHUB_CACHE_WARM_THROTTLE_MS,
 	isGithubCacheBrowserWarmEnabled,
 	shouldStartGithubCacheWarm,
@@ -30,5 +31,11 @@ describe("GithubCacheWarmer helpers", () => {
 				now,
 			),
 		).toBe(true);
+	});
+
+	it("classifies warm API responses for throttle and retry behavior", () => {
+		expect(classifyGithubCacheWarmResponse(true, true)).toBe("accepted");
+		expect(classifyGithubCacheWarmResponse(true, false)).toBe("skipped");
+		expect(classifyGithubCacheWarmResponse(false, true)).toBe("failed");
 	});
 });

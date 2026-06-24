@@ -191,6 +191,7 @@ describe("github-cache-warmer", () => {
 			"repo",
 			"main",
 			authCtx,
+			{},
 		);
 		expect(github.getRepoWorkflowRuns).toHaveBeenCalledWith("owner", "repo", 50, {
 			authCtx,
@@ -247,6 +248,18 @@ describe("github-cache-warmer", () => {
 			"owner",
 			"repo",
 			expect.objectContaining({ forceRefresh: true }),
+		);
+		expect(overviewWarmers.warmOverviewPRs).toHaveBeenCalledWith(
+			"owner",
+			"repo",
+			expect.objectContaining({ forceRefresh: true }),
+		);
+		expect(overviewWarmers.getRepoReadmeHtmlCacheFirst).toHaveBeenCalledWith(
+			"owner",
+			"repo",
+			"main",
+			expect.objectContaining({ forceRefresh: true }),
+			{ forceRefresh: true },
 		);
 	});
 

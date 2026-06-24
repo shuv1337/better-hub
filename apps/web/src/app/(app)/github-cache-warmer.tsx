@@ -53,7 +53,18 @@ function isWarmBroadcastMessage(value: unknown): value is WarmBroadcastMessage {
 	);
 }
 
-async function postWarmRequest() {
+export type GithubCacheWarmPostOutcome = "accepted" | "skipped" | "failed";
+
+export function classifyGithubCacheWarmResponse(
+	responseOk: boolean,
+	accepted: boolean | undefined,
+): GithubCacheWarmPostOutcome {
+	if (!responseOk) return "failed";
+	if (accepted === true) return "accepted";
+	return "skipped";
+}
+
+async function postWarmRequest(): Promise<GithubCacheWarmPostOutcome> {
 	const response = await fetch("/api/github-cache/warm", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -63,7 +74,14 @@ async function postWarmRequest() {
 			refreshStaleOnly: true,
 		}),
 	});
-	return response.ok;
+	let accepted: boolean | undefined;
+	if (response.ok) {
+		const body: unknown = await response.json().catch(() => null);
+		if (body && typeof body === "object" && "accepted" in body) {
+			accepted = (body as { accepted?: boolean }).accepted;
+		}
+	}
+	return classifyGithubCacheWarmResponse(response.ok, accepted);
 }
 
 export function GithubCacheWarmer() {
@@ -85,12 +103,20 @@ export function GithubCacheWarmer() {
 			const now = Date.now();
 			if (!retryNetworkFailure) {
 				if (!shouldStartGithubCacheWarm(readLastWarm(), now)) return;
-				writeLastWarm(now);
-				postWarmStarted(channel, now);
 			}
 
 			try {
-				await postWarmRequest();
+				const outcome = await postWarmRequest();
+				if (outcome === "accepted") {
+					const at = Date.now();
+					writeLastWarm(at);
+					postWarmStarted(channel, at);
+				} else if (outcome === "failed") {
+					if (closed || retryNetworkFailure) return;
+					window.setTimeout(() => {
+						if (!closed) void startWarm(true);
+					}, GITHUB_CACHE_WARM_RETRY_DELAY_MS);
+				}
 			} catch {
 				if (closed || retryNetworkFailure) return;
 				window.setTimeout(() => {

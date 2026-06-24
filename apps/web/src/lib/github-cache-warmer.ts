@@ -331,6 +331,7 @@ async function warmRepo(params: {
 	run: GithubCacheWarmRun;
 }): Promise<{ warmed: boolean; errors: StageError[]; lockLost?: boolean }> {
 	const { authCtx, mode, refreshStaleOnly, repo, run } = params;
+	const stageAuthCtx = mode === "full" ? fullRefreshAuth(authCtx) : authCtx;
 	const errors: StageError[] = [];
 	let pageData: RepoPageData | null = null;
 	const assertRunLock = () => assertGithubCacheWarmLock(authCtx.userId, run);
@@ -373,14 +374,13 @@ async function warmRepo(params: {
 							repo.owner,
 							repo.repo,
 							defaultBranch,
-							authCtx,
+							stageAuthCtx,
 						)
 					: null,
 			),
 		);
 	}
 
-	const layoutAuthCtx = mode === "full" ? fullRefreshAuth(authCtx) : authCtx;
 	await runRepoStage(
 		repo,
 		mode === "full" ? "warmLayoutMetadataFull" : "warmLayoutMetadataQuick",
@@ -401,14 +401,14 @@ async function warmRepo(params: {
 						owner: repo.owner,
 						repo: repo.repo,
 						pageData: loadedPageData,
-						authCtx: layoutAuthCtx,
+						authCtx: stageAuthCtx,
 						isEmptyRepo,
 					})
 				: warmLayoutMetadataQuick({
 						owner: repo.owner,
 						repo: repo.repo,
 						pageData: loadedPageData,
-						authCtx,
+						authCtx: stageAuthCtx,
 						isEmptyRepo,
 					});
 		},
@@ -424,7 +424,10 @@ async function warmRepo(params: {
 							repo.owner,
 							repo.repo,
 							defaultBranch,
-							authCtx,
+							stageAuthCtx,
+							mode === "full"
+								? { forceRefresh: true }
+								: {},
 						)
 					: null,
 			),
@@ -438,7 +441,7 @@ async function warmRepo(params: {
 				(await shouldRunRepoStage(refreshStaleOnly, () =>
 					isPresent(getCachedOverviewPRs(repo.owner, repo.repo)),
 				))
-					? warmOverviewPRs(repo.owner, repo.repo, authCtx)
+					? warmOverviewPRs(repo.owner, repo.repo, stageAuthCtx)
 					: null,
 		},
 		{
@@ -447,7 +450,7 @@ async function warmRepo(params: {
 				(await shouldRunRepoStage(refreshStaleOnly, () =>
 					isPresent(getCachedOverviewIssues(repo.owner, repo.repo)),
 				))
-					? warmOverviewIssues(repo.owner, repo.repo, authCtx)
+					? warmOverviewIssues(repo.owner, repo.repo, stageAuthCtx)
 					: null,
 		},
 		{
@@ -456,7 +459,7 @@ async function warmRepo(params: {
 				(await shouldRunRepoStage(refreshStaleOnly, () =>
 					isPresent(getCachedOverviewEvents(repo.owner, repo.repo)),
 				))
-					? warmOverviewEvents(repo.owner, repo.repo, authCtx)
+					? warmOverviewEvents(repo.owner, repo.repo, stageAuthCtx)
 					: null,
 		},
 		{
@@ -469,7 +472,7 @@ async function warmRepo(params: {
 							repo.owner,
 							repo.repo,
 							defaultBranch,
-							authCtx,
+							stageAuthCtx,
 						)
 					: null,
 		},
@@ -488,14 +491,13 @@ async function warmRepo(params: {
 						repo.owner,
 						repo.repo,
 						50,
-						authOverride(authCtx),
+						authOverride(stageAuthCtx),
 					)
 				: null,
 		),
 	);
 
 	if (mode === "full") {
-		const refreshAuthCtx = fullRefreshAuth(authCtx);
 		await runStageGroup(repo, errors, assertRunLock, [
 			{
 				name: "getRepoReleases",
@@ -513,7 +515,7 @@ async function warmRepo(params: {
 						? getRepoReleases(
 								repo.owner,
 								repo.repo,
-								authOverride(refreshAuthCtx),
+								authOverride(stageAuthCtx),
 							)
 						: null,
 			},
@@ -537,7 +539,7 @@ async function warmRepo(params: {
 						? getRepoDiscussionsPage(
 								repo.owner,
 								repo.repo,
-								authOverride(refreshAuthCtx),
+								authOverride(stageAuthCtx),
 							)
 						: null;
 				},
@@ -556,7 +558,7 @@ async function warmRepo(params: {
 						? warmOverviewCommitActivity(
 								repo.owner,
 								repo.repo,
-								refreshAuthCtx,
+								stageAuthCtx,
 							)
 						: null,
 			},

@@ -11,6 +11,7 @@ import {
 	createGithubCacheWarmSkippedResult,
 	warmPersonalGithubCache,
 	type GithubCacheWarmOptions,
+	type GithubCacheWarmResult,
 	type GithubCacheWarmRun,
 } from "@/lib/github-cache-warmer";
 import { inngest } from "@/lib/inngest";
@@ -87,6 +88,7 @@ async function warmInline(params: {
 	options: GithubCacheWarmOptions;
 }): Promise<Response> {
 	const run = makeRun(params.runId, params.lockKey, "api-inline");
+	const startedAt = Date.now();
 	try {
 		const authCtx = await resolveGitHubAuthContextForUser(params.userId);
 		if (!authCtx) {
@@ -110,6 +112,31 @@ async function warmInline(params: {
 		});
 		await storeGithubCacheWarmResult(params.userId, result);
 		return Response.json({ accepted: true, runId: params.runId, result });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		const failure: GithubCacheWarmResult = {
+			userId: params.userId,
+			runId: run.runId,
+			source: run.source,
+			discoveredRepos: 0,
+			selectedRepos: 0,
+			warmedRepos: 0,
+			skippedRepos: 0,
+			failedRepos: 1,
+			jobsQueued: 0,
+			durationMs: Date.now() - startedAt,
+			errors: [{ repo: "*", stage: "inline-warm", message }],
+		};
+		await storeGithubCacheWarmResult(params.userId, failure).catch(() => {});
+		return Response.json(
+			{
+				accepted: false,
+				runId: params.runId,
+				error: "GitHub cache warm failed",
+				message,
+			},
+			{ status: 500 },
+		);
 	} finally {
 		await releaseGithubCacheWarmLock(params.userId, params.runId);
 	}

@@ -18,6 +18,7 @@
 - Warm modes: quick warms first-navigation repo overview/layout targets; full adds releases, discussions, commit activity, and force-refreshed user-scoped response caches.
 - Debug UI: /debug/github-cache shows current user, warm lock state, last warm result, sync job counts/failures, and descriptor-backed per-repo cache target status. Do not add tokens or raw cached payloads to this page.
 - Redis key patterns: per-user GitHub responses use gh:{userId}:...; public shared responses use ghpub:*; UI fragments use keys such as repo_page_data:*, repo_file_tree:*, readme_html:*, overview_*, and github-cache-warm-last:{userId}.
+- Repo layout/overview fragment keys (readme_html, repo_file_tree, overview_*, repo_languages/branches/tags/contributor_avatars) are not user-prefixed; treat them as permission-gated-at-read — only load after a per-user repo permission check (e.g. getRepoPageData / maintainer gate). Never read these for private repos without that check.
 - Warm lock semantics: the API owns github-cache-warm-lock:{userId} with a generated runId; Inngest verifies/renews/releases only when the stored value still matches. Release must remain compare-and-delete.
 - Production worker auth must use resolveGitHubAuthContextForUser(userId), not request-scoped React cache() auth getters.
 - Do not expand the shareable-cache allowlist without a security review. Repo-scoped, org-scoped, viewer-specific, issue, PR, file/tree, workflow, branch/tag, release, contributor, nav-count, and private-repo data must not be written to ghpub:*.
