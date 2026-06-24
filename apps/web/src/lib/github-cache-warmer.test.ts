@@ -129,14 +129,46 @@ describe("github-cache-warmer", () => {
 		const { discoverPersonalRepos } = await import("./github-cache-warmer");
 		const repos = await discoverPersonalRepos(authCtx, { maxRepos: 2 });
 
-		expect(github.getUserRepos).toHaveBeenCalledWith("updated", 100, { authCtx });
-		expect(github.getUserOrgs).toHaveBeenCalledWith(50, { authCtx });
+		expect(github.getUserRepos).toHaveBeenCalledWith("pushed", 100, { authCtx });
+		expect(github.getUserOrgs).toHaveBeenCalledWith(10, { authCtx });
 		expect(github.getOrgRepos).toHaveBeenCalledWith(
 			"org",
-			{ perPage: 100, sort: "updated", type: "all" },
+			{ perPage: 50, sort: "pushed", type: "all" },
 			{ authCtx },
 		);
 		expect(repos.map((item) => item.fullName)).toEqual(["org/newest", "org/same"]);
+	});
+
+	it("caps org traversal and org repo list volume during discovery", async () => {
+		github.getUserRepos.mockResolvedValue([]);
+		github.getUserOrgs.mockResolvedValue([
+			{ login: "org-a" },
+			{ login: "org-b" },
+			{ login: "org-c" },
+		]);
+		github.getOrgRepos.mockResolvedValue([]);
+
+		const { discoverPersonalRepos } = await import("./github-cache-warmer");
+		await discoverPersonalRepos(authCtx, {
+			maxRepos: 5,
+			maxOrgs: 2,
+			orgReposPerOrg: 25,
+		});
+
+		expect(github.getUserOrgs).toHaveBeenCalledWith(2, { authCtx });
+		expect(github.getOrgRepos).toHaveBeenCalledTimes(2);
+		expect(github.getOrgRepos).toHaveBeenNthCalledWith(
+			1,
+			"org-a",
+			{ perPage: 25, sort: "pushed", type: "all" },
+			{ authCtx },
+		);
+		expect(github.getOrgRepos).toHaveBeenNthCalledWith(
+			2,
+			"org-b",
+			{ perPage: 25, sort: "pushed", type: "all" },
+			{ authCtx },
+		);
 	});
 
 	it("warms quick-mode repo caches in the expected shared-cache path", async () => {

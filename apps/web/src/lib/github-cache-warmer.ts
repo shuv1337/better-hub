@@ -42,6 +42,54 @@ import { getGithubCacheEntrySyncedAt } from "./github-sync-store";
 export const DEFAULT_MAX_REPOS = 100;
 export const DEFAULT_CONCURRENT_REPOS = 3;
 export const DEFAULT_CONCURRENT_STAGES_PER_REPO = 2;
+export const DEFAULT_DISCOVERY_MAX_ORGS = 10;
+export const DEFAULT_DISCOVERY_ORG_REPOS_PER_ORG = 50;
+export const DEFAULT_DISCOVERY_USER_REPOS = 100;
+
+export interface GithubCacheWarmDiscoveryOptions {
+	maxRepos?: number;
+	maxOrgs?: number;
+	orgReposPerOrg?: number;
+	userRepos?: number;
+}
+
+export interface GithubCacheWarmDiscoveryLimits {
+	maxRepos: number;
+	maxOrgs: number;
+	orgReposPerOrg: number;
+	userRepos: number;
+}
+
+function envPositiveInt(name: string, fallback: number): number {
+	const value = Number(process.env[name]);
+	return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
+export function resolveGithubCacheWarmDiscoveryLimits(
+	options: GithubCacheWarmDiscoveryOptions = {},
+): GithubCacheWarmDiscoveryLimits {
+	return {
+		maxRepos: options.maxRepos ?? DEFAULT_MAX_REPOS,
+		maxOrgs:
+			options.maxOrgs ??
+			envPositiveInt(
+				"GITHUB_CACHE_WARM_DISCOVERY_MAX_ORGS",
+				DEFAULT_DISCOVERY_MAX_ORGS,
+			),
+		orgReposPerOrg:
+			options.orgReposPerOrg ??
+			envPositiveInt(
+				"GITHUB_CACHE_WARM_DISCOVERY_ORG_REPOS_PER_ORG",
+				DEFAULT_DISCOVERY_ORG_REPOS_PER_ORG,
+			),
+		userRepos:
+			options.userRepos ??
+			envPositiveInt(
+				"GITHUB_CACHE_WARM_DISCOVERY_USER_REPOS",
+				DEFAULT_DISCOVERY_USER_REPOS,
+			),
+	};
+}
 
 export type GithubCacheWarmMode = "quick" | "full";
 
@@ -162,8 +210,9 @@ function sortWarmableRepos(repos: WarmableRepo[]): WarmableRepo[] {
 
 export async function discoverPersonalRepos(
 	authCtx: GitHubAuthContext,
-	options: { maxRepos?: number } = {},
+	options: GithubCacheWarmDiscoveryOptions = {},
 ): Promise<WarmableRepo[]> {
+	const limits = resolveGithubCacheWarmDiscoveryLimits(options);
 	const seen = new Map<string, WarmableRepo>();
 	const addRepo = (repo: unknown) => {
 		const warmable = normalizeWarmableRepo(repo);
@@ -182,10 +231,10 @@ export async function discoverPersonalRepos(
 	};
 
 	const auth = authOverride(authCtx);
-	const userRepos = await getUserRepos("updated", 100, auth);
+	const userRepos = await getUserRepos("pushed", limits.userRepos, auth);
 	for (const repo of userRepos) addRepo(repo);
 
-	const orgs = await getUserOrgs(50, auth);
+	const orgs = (await getUserOrgs(limits.maxOrgs, auth)).slice(0, limits.maxOrgs);
 	for (const org of orgs) {
 		const login =
 			org &&
@@ -196,16 +245,17 @@ export async function discoverPersonalRepos(
 		if (!login) continue;
 		const orgRepos = await getOrgRepos(
 			login,
-			{ perPage: 100, sort: "updated", type: "all" },
+			{
+				perPage: limits.orgReposPerOrg,
+				sort: "pushed",
+				type: "all",
+			},
 			auth,
 		);
 		for (const repo of orgRepos) addRepo(repo);
 	}
 
-	return sortWarmableRepos([...seen.values()]).slice(
-		0,
-		options.maxRepos ?? DEFAULT_MAX_REPOS,
-	);
+	return sortWarmableRepos([...seen.values()]).slice(0, limits.maxRepos);
 }
 
 async function mapConcurrent<T, R>(
@@ -594,6 +644,9 @@ export async function warmPersonalGithubCache(params: {
 		source: run.source,
 		maxRepos: options.maxRepos,
 		refreshStaleOnly: options.refreshStaleOnly ?? false,
+		discovery: resolveGithubCacheWarmDiscoveryLimits({
+			maxRepos: options.maxRepos,
+		}),
 	});
 
 	let repos: WarmableRepo[];
