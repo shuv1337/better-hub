@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { decryptSettingSecret, encryptSettingSecret } from "./user-settings-secrets";
 
 export interface UserSettings {
 	userId: string;
@@ -54,12 +55,24 @@ function toSettings(row: {
 	};
 }
 
+async function toDecryptedSettings(row: Parameters<typeof toSettings>[0]): Promise<UserSettings> {
+	const settings = toSettings(row);
+	return {
+		...settings,
+		openrouterApiKey: await decryptSettingSecret(
+			settings.openrouterApiKey,
+			"openrouterApiKey",
+		),
+		githubPat: await decryptSettingSecret(settings.githubPat, "githubPat"),
+	};
+}
+
 export async function getUserSettings(userId: string): Promise<UserSettings> {
 	const cached = await prisma.userSettings.findUnique({
 		where: { userId },
 	});
 
-	if (cached) return toSettings(cached);
+	if (cached) return toDecryptedSettings(cached);
 
 	const now = new Date().toISOString();
 	const row = await prisma.userSettings.upsert({
@@ -68,7 +81,7 @@ export async function getUserSettings(userId: string): Promise<UserSettings> {
 		update: {},
 	});
 
-	return toSettings(row);
+	return toDecryptedSettings(row);
 }
 
 export async function updateUserSettings(
@@ -108,9 +121,12 @@ export async function updateUserSettings(
 	if (updates.colorMode !== undefined) data.colorMode = updates.colorMode;
 	if (updates.ghostModel !== undefined) data.ghostModel = updates.ghostModel;
 	if (updates.useOwnApiKey !== undefined) data.useOwnApiKey = updates.useOwnApiKey;
-	if (updates.openrouterApiKey !== undefined)
-		data.openrouterApiKey = updates.openrouterApiKey;
-	if (updates.githubPat !== undefined) data.githubPat = updates.githubPat;
+	if (updates.openrouterApiKey !== undefined) {
+		data.openrouterApiKey = await encryptSettingSecret(updates.openrouterApiKey);
+	}
+	if (updates.githubPat !== undefined) {
+		data.githubPat = await encryptSettingSecret(updates.githubPat);
+	}
 	if (updates.codeThemeLight !== undefined) data.codeThemeLight = updates.codeThemeLight;
 	if (updates.codeThemeDark !== undefined) data.codeThemeDark = updates.codeThemeDark;
 	if (updates.codeFont !== undefined) data.codeFont = updates.codeFont;
@@ -122,7 +138,7 @@ export async function updateUserSettings(
 		data,
 	});
 
-	return toSettings(updated);
+	return toDecryptedSettings(updated);
 }
 
 export async function deleteUserSettings(userId: string): Promise<void> {
