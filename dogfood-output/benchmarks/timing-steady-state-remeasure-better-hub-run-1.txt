@@ -1,0 +1,33 @@
+# Primary visible-content marker: agent-browser `wait --text <repo>` (falls back to `wait --text <owner>`, then 5000ms timeout). Captures repo name in app shell/header, not README region.
+# Secondary: `wait --load networkidle`.
+# Console errors below are sliced to this navigation window only (lines after last exact [view] URL match).
+
+scenario=steady-state-remeasure
+
+owner=shuv1337
+
+repo=better-hub
+
+run=1
+
+url=http://127.0.0.1:3000/shuv1337/better-hub
+
+visible_content_marker=wait --text "better-hub" (fallback: "shuv1337")
+
+note=Post-failed-warm-attempt remeasure; manual warm skipped (ISSUE-003). Navigation-warm only.
+
+navigation_start_ms=1782288469796
+
+visible_content_ms=4
+
+network_idle_ms=2962
+
+total_ms=4213
+
+screenshot=/home/shuv/repos/better-hub/dogfood-output/screenshots/cache-post-warm-better-hub-run-1.png
+
+console_file=console-steady-state-remeasure-better-hub-run-1.txt
+console_error_anchor_line=574
+console_errors_summary=(none in navigation window)
+---errors---
+(none in navigation window)

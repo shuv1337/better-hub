@@ -1,0 +1,31 @@
+# Primary visible-content marker: agent-browser `wait --text <repo>` (falls back to `wait --text <owner>`, then 5000ms timeout). Captures repo name in app shell/header, not README region.
+# Secondary: `wait --load networkidle`.
+# Console errors below are sliced to this navigation window only (lines after last exact [view] URL match).
+
+scenario=active-overview
+
+owner=shuv1337
+
+repo=better-hub
+
+run=2
+
+url=http://127.0.0.1:3000/shuv1337/better-hub
+
+visible_content_marker=wait --text "better-hub" (fallback: "shuv1337")
+
+navigation_start_ms=1782288412130
+
+visible_content_ms=8
+
+network_idle_ms=2999
+
+total_ms=4242
+
+screenshot=/home/shuv/repos/better-hub/dogfood-output/screenshots/cache-active-overview-better-hub-run-2.png
+
+console_file=console-active-overview-better-hub-run-2.txt
+console_error_anchor_line=490
+console_errors_summary=(none in navigation window)
+---errors---
+(none in navigation window)

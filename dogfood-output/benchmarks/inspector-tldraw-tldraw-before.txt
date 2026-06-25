@@ -1,0 +1,364 @@
+- generic
+  - banner
+    - navigation
+      - link "BETTER-HUB." [ref=e24]
+        - image
+        - StaticText "BETTER-HUB."
+      - button "Ghost (⌘I)" [ref=e16]
+        - image
+      - button "Notifications" [ref=e17]
+      - button "shuv" [expanded=false, ref=e18]
+        - image "shuv"
+  - main
+    - sectionheader
+      - heading "GitHub Cache Debug" [level=1, ref=e25]
+      - paragraph
+        - StaticText "Inspect cache health and warm runs for the current authenticated user."
+      - StaticText "USER ID"
+      - StaticText "eJVldxVLL0gCe8772Txy7B3Qy8YKl5Ao"
+      - StaticText "GITHUB LOGIN"
+      - StaticText "shuv1337"
+      - StaticText "WARM LOCK"
+      - StaticText "open"
+      - StaticText "LOCK OWNER"
+      - StaticText "n/a"
+    - generic
+      - heading "Manual Warm" [level=2, ref=e26]
+      - button "Quick warm" [ref=e27]
+      - button "Full warm" [ref=e28]
+    - generic
+      - heading "Last Warm" [level=2, ref=e29]
+      - paragraph
+        - StaticText "No warm result has been stored."
+    - generic
+      - heading "Sync Jobs" [level=2, ref=e30]
+      - StaticText "PENDING"
+      - StaticText "0"
+      - StaticText "RUNNING"
+      - StaticText "0"
+      - StaticText "FAILED"
+      - StaticText "0"
+    - generic
+      - heading "Repo Status" [level=2, ref=e31]
+      - form
+        - textbox "owner" [ref=e34]: shuv1337
+          - StaticText "shuv1337"
+        - textbox "repo" [ref=e35]: tldraw
+          - StaticText "tldraw"
+        - button "Inspect" [ref=e36]
+      - generic
+        - StaticText "Generated 2026-06-24T08:05:11.411Z forshuv1337/tldraw"
+      - generic
+        - heading "Sync Jobs" [level=2, ref=e37]
+        - StaticText "PENDING"
+        - StaticText "0"
+        - StaticText "RUNNING"
+        - StaticText "0"
+        - StaticText "FAILED"
+        - StaticText "0"
+      - generic
+        - heading "GitHub Response Cache Targets" [level=2, ref=e38]
+        - table
+          - rowgroup
+            - row
+              - columnheader "TARGET" [ref=e218]
+              - columnheader "STATUS" [ref=e219]
+              - columnheader "CLASS" [ref=e220]
+              - columnheader "SCOPE" [ref=e221]
+              - columnheader "AGE" [ref=e222]
+              - columnheader "SYNCED" [ref=e223]
+              - columnheader "KEY" [ref=e224]
+          - row
+            - cell "repo" [ref=e40]
+            - cell "missing" [ref=e41]
+            - cell "repo-chrome" [ref=e42]
+            - cell "owner-repo" [ref=e43]
+            - cell "n/a" [ref=e44]
+            - cell "n/a" [ref=e45]
+            - cell "repo:shuv1337/tldraw" [ref=e46]
+          - row
+            - cell "repo_readme" [ref=e47]
+            - cell "missing" [ref=e48]
+            - cell "readme" [ref=e49]
+            - cell "owner-repo" [ref=e50]
+            - cell "n/a" [ref=e51]
+            - cell "n/a" [ref=e52]
+            - cell "repo_readme:shuv1337/tldraw:~" [ref=e53]
+          - row
+            - cell "repo_issues" [ref=e54]
+            - cell "missing" [ref=e55]
+            - cell "hot-list" [ref=e56]
+            - cell "owner-repo" [ref=e57]
+            - cell "n/a" [ref=e58]
+            - cell "n/a" [ref=e59]
+            - cell "repo_issues:shuv1337/tldraw:open" [ref=e60]
+          - row
+            - cell "repo_pull_requests" [ref=e61]
+            - cell "missing" [ref=e62]
+            - cell "hot-list" [ref=e63]
+            - cell "owner-repo" [ref=e64]
+            - cell "n/a" [ref=e65]
+            - cell "n/a" [ref=e66]
+            - cell "repo_pull_requests:shuv1337/tldraw:open" [ref=e67]
+          - row
+            - cell "repo_events" [ref=e68]
+            - cell "missing" [ref=e69]
+            - cell "activity" [ref=e70]
+            - cell "owner-repo" [ref=e71]
+            - cell "n/a" [ref=e72]
+            - cell "n/a" [ref=e73]
+            - cell "repo_events:shuv1337/tldraw:30" [ref=e74]
+          - row
+            - cell "repo_workflow_runs" [ref=e75]
+            - cell "missing" [ref=e76]
+            - cell "ci" [ref=e77]
+            - cell "owner-repo" [ref=e78]
+            - cell "n/a" [ref=e79]
+            - cell "n/a" [ref=e80]
+            - cell "repo_workflow_runs:shuv1337/tldraw:50" [ref=e81]
+          - row
+            - cell "repo_branches" [ref=e82]
+            - cell "missing" [ref=e83]
+            - cell "code-tree" [ref=e84]
+            - cell "owner-repo" [ref=e85]
+            - cell "n/a" [ref=e86]
+            - cell "n/a" [ref=e87]
+            - cell "repo_branches:shuv1337/tldraw" [ref=e88]
+          - row
+            - cell "repo_tags" [ref=e89]
+            - cell "missing" [ref=e90]
+            - cell "code-tree" [ref=e91]
+            - cell "owner-repo" [ref=e92]
+            - cell "n/a" [ref=e93]
+            - cell "n/a" [ref=e94]
+            - cell "repo_tags:shuv1337/tldraw" [ref=e95]
+          - row
+            - cell "repo_releases" [ref=e96]
+            - cell "missing" [ref=e97]
+            - cell "repo-chrome" [ref=e98]
+            - cell "owner-repo" [ref=e99]
+            - cell "n/a" [ref=e100]
+            - cell "n/a" [ref=e101]
+            - cell "repo_releases:shuv1337/tldraw" [ref=e102]
+          - row
+            - cell "repo_contributors" [ref=e103]
+            - cell "missing" [ref=e104]
+            - cell "stats" [ref=e105]
+            - cell "owner-repo" [ref=e106]
+            - cell "n/a" [ref=e107]
+            - cell "n/a" [ref=e108]
+            - cell "repo_contributors:shuv1337/tldraw:20" [ref=e109]
+          - row
+            - cell "repo_discussions" [ref=e110]
+            - cell "missing" [ref=e111]
+            - cell "hot-list" [ref=e112]
+            - cell "owner-repo" [ref=e113]
+            - cell "n/a" [ref=e114]
+            - cell "n/a" [ref=e115]
+            - cell "repo_discussions:v2:shuv1337/tldraw" [ref=e116]
+          - row
+            - cell "repo_nav_counts" [ref=e117]
+            - cell "missing" [ref=e118]
+            - cell "repo-chrome" [ref=e119]
+            - cell "owner-repo" [ref=e120]
+            - cell "n/a" [ref=e121]
+            - cell "n/a" [ref=e122]
+            - cell "repo_nav_counts:shuv1337/tldraw" [ref=e123]
+          - row
+            - cell "repo_languages" [ref=e124]
+            - cell "missing" [ref=e125]
+            - cell "stats" [ref=e126]
+            - cell "owner-repo" [ref=e127]
+            - cell "n/a" [ref=e128]
+            - cell "n/a" [ref=e129]
+            - cell "repo_languages:shuv1337/tldraw" [ref=e130]
+      - generic
+        - heading "UI Cache Targets" [level=2, ref=e39]
+        - table
+          - rowgroup
+            - row
+              - columnheader "TARGET" [ref=e225]
+              - columnheader "STATUS" [ref=e226]
+              - columnheader "CLASS" [ref=e227]
+              - columnheader "SCOPE" [ref=e228]
+              - columnheader "AGE" [ref=e229]
+              - columnheader "SYNCED" [ref=e230]
+              - columnheader "KEY" [ref=e231]
+          - row
+            - cell "repo_page_data" [ref=e131]
+            - cell "missing" [ref=e132]
+            - cell "repo-chrome" [ref=e133]
+            - cell "user" [ref=e134]
+            - cell "n/a" [ref=e135]
+            - cell "n/a" [ref=e136]
+            - cell "repo_page_data:eJVldxVLL0gCe8772Txy7B3Qy8YKl5Ao:shuv1337/tldraw" [ref=e137]
+          - row
+            - cell "repo_file_tree" [ref=e138]
+            - cell "missing" [ref=e139]
+            - cell "code-tree" [ref=e140]
+            - cell "owner-repo" [ref=e141]
+            - cell "n/a" [ref=e142]
+            - cell "n/a" [ref=e143]
+            - cell "repo_file_tree:shuv1337/tldraw" [ref=e144]
+          - row
+            - cell "readme_html" [ref=e145]
+            - cell "missing" [ref=e146]
+            - cell "readme" [ref=e147]
+            - cell "owner-repo" [ref=e148]
+            - cell "n/a" [ref=e149]
+            - cell "n/a" [ref=e150]
+            - cell "readme_html:shuv1337/tldraw" [ref=e151]
+          - row
+            - cell "overview_prs" [ref=e152]
+            - cell "missing" [ref=e153]
+            - cell "hot-list" [ref=e154]
+            - cell "owner-repo" [ref=e155]
+            - cell "n/a" [ref=e156]
+            - cell "n/a" [ref=e157]
+            - cell "overview_prs:shuv1337/tldraw" [ref=e158]
+          - row
+            - cell "overview_issues" [ref=e159]
+            - cell "missing" [ref=e160]
+            - cell "hot-list" [ref=e161]
+            - cell "owner-repo" [ref=e162]
+            - cell "n/a" [ref=e163]
+            - cell "n/a" [ref=e164]
+            - cell "overview_issues:shuv1337/tldraw" [ref=e165]
+          - row
+            - cell "overview_events" [ref=e166]
+            - cell "missing" [ref=e167]
+            - cell "activity" [ref=e168]
+            - cell "owner-repo" [ref=e169]
+            - cell "n/a" [ref=e170]
+            - cell "n/a" [ref=e171]
+            - cell "overview_events:shuv1337/tldraw" [ref=e172]
+          - row
+            - cell "overview_commit_activity" [ref=e173]
+            - cell "missing" [ref=e174]
+            - cell "stats" [ref=e175]
+            - cell "owner-repo" [ref=e176]
+            - cell "n/a" [ref=e177]
+            - cell "n/a" [ref=e178]
+            - cell "overview_commit_activity:shuv1337/tldraw" [ref=e179]
+          - row
+            - cell "overview_ci" [ref=e180]
+            - cell "missing" [ref=e181]
+            - cell "ci" [ref=e182]
+            - cell "owner-repo" [ref=e183]
+            - cell "n/a" [ref=e184]
+            - cell "n/a" [ref=e185]
+            - cell "overview_ci:shuv1337/tldraw" [ref=e186]
+          - row
+            - cell "repo_languages" [ref=e187]
+            - cell "missing" [ref=e188]
+            - cell "stats" [ref=e189]
+            - cell "owner-repo" [ref=e190]
+            - cell "n/a" [ref=e191]
+            - cell "n/a" [ref=e192]
+            - cell "repo_languages:shuv1337/tldraw" [ref=e193]
+          - row
+            - cell "repo_branches" [ref=e194]
+            - cell "missing" [ref=e195]
+            - cell "code-tree" [ref=e196]
+            - cell "owner-repo" [ref=e197]
+            - cell "n/a" [ref=e198]
+            - cell "n/a" [ref=e199]
+            - cell "repo_branches:shuv1337/tldraw" [ref=e200]
+          - row
+            - cell "repo_tags" [ref=e201]
+            - cell "missing" [ref=e202]
+            - cell "code-tree" [ref=e203]
+            - cell "owner-repo" [ref=e204]
+            - cell "n/a" [ref=e205]
+            - cell "n/a" [ref=e206]
+            - cell "repo_tags:shuv1337/tldraw" [ref=e207]
+          - row
+            - cell "repo_contributors" [ref=e208]
+            - cell "missing" [ref=e209]
+            - cell "stats" [ref=e210]
+            - cell "owner-repo" [ref=e211]
+            - cell "n/a" [ref=e212]
+            - cell "n/a" [ref=e213]
+            - cell "repo_contributor_avatars:shuv1337/tldraw" [ref=e214]
+  - generic
+    - StaticText "Ghost"
+    - button [ref=e4]
+    - button "New chat" [ref=e5]
+      - StaticText "New chat"
+    - button "New tab" [ref=e6]
+    - generic
+      - paragraph
+        - StaticText "Ghost"
+      - paragraph
+        - StaticText "Ask about debug/github-cache, star it, browse issues, and more"
+      - button "Star this repo" [ref=e19]
+      - button "List open issues" [ref=e20]
+      - button "List open PRs" [ref=e21]
+      - button "Fork this repo" [ref=e22]
+    - generic
+      - textbox "Ask about debug/github-cache..." [ref=e23]
+      - button "Send (Enter)" [disabled, ref=e32]
+    - paragraph
+      - StaticText "AI can make mistakes. Verify important information."
+  - alert
+  - generic [ref=e1] clickable [onclick]
+  - dialog "Command Menu"
+    - StaticText "Command Menu"
+    - textbox "Type a command..." [ref=e2]
+    - button "/" [ref=e3]
+    - generic
+      - StaticText "SUGGESTIONS"
+      - button "Go to File debug/github-cache Ctrl+G" [ref=e7]
+        - StaticText "Go to File"
+        - StaticText "debug/github-cache"
+        - StaticText "Ctrl+G"
+      - button "Issues Browse issues" [ref=e8]
+        - StaticText "Issues"
+        - StaticText "Browse issues"
+      - button "Pull Requests Browse pull requests" [ref=e9]
+        - StaticText "Pull Requests"
+        - StaticText "Browse pull requests"
+      - StaticText "COMMANDS"
+      - button "Open Ghost AI assistant Ctrl+I" [ref=e10]
+        - StaticText "Open Ghost"
+        - StaticText "AI assistant"
+        - StaticText "Ctrl+I"
+      - button "Preview Public View See what visitors see (README only)" [ref=e11]
+        - StaticText "Preview Public View"
+        - StaticText "See what visitors see (README only)"
+      - button "Search GitHub Find repositories and users Ctrl+/" [ref=e12]
+        - StaticText "Search GitHub"
+        - StaticText "Find repositories and users"
+        - StaticText "Ctrl+/"
+      - button "Change Theme Switch color theme" [ref=e13]
+        - StaticText "Change Theme"
+        - StaticText "Switch color theme"
+      - button "Change File Icons Switch file icon theme" [ref=e14]
+        - StaticText "Change File Icons"
+        - StaticText "Switch file icon theme"
+      - StaticText "ACCOUNT"
+      - button "Sign Out" [ref=e15]
+        - StaticText "Sign Out"
+    - StaticText "↑"
+    - StaticText "↓"
+    - StaticText "navigate"
+    - StaticText "↵"
+    - StaticText "select"
+    - StaticText "/"
+    - StaticText "repos"
+    - StaticText "esc"
+    - StaticText "close"
+    - StaticText "Tab"
+    - StaticText "switch"
+  - generic
+    - Canvas
+    - generic
+      - generic
+        - button "Copy element" [ref=e215]
+          - image
+        - button "Comment on element" [ref=e216]
+          - image
+        - button "Style element" [ref=e217]
+          - image
+      - button "Collapse toolbar" [expanded=true, ref=e33]
+        - image

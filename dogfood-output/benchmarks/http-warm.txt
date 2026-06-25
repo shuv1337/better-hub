@@ -1,0 +1,7 @@
+=== HTTP warm: http://127.0.0.1:3000/shuv1337/better-hub ===
+status=200
+redirect=
+time_total=1.217863
+time_starttransfer=0.527911
+size_download=1002317
+<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" as="image" href="https://avatars.githubusercontent.

@@ -1,0 +1,33 @@
+# Primary visible-content marker: agent-browser `wait --text <repo>` (falls back to `wait --text <owner>`, then 5000ms timeout). Captures repo name in app shell/header, not README region.
+# Secondary: `wait --load networkidle`.
+# Console errors below are sliced to this navigation window only (lines after last exact [view] URL match).
+
+scenario=cold-overview
+
+owner=shuv1337
+
+repo=oak-spike
+
+run=1
+
+url=http://127.0.0.1:3000/shuv1337/oak-spike
+
+visible_content_marker=wait --text "oak-spike" (fallback: "shuv1337")
+
+note=Only genuine cold navigation for oak-spike (inspector all missing before visit).
+
+navigation_start_ms=1782288326809
+
+visible_content_ms=8
+
+network_idle_ms=11144
+
+total_ms=13189
+
+screenshot=/home/shuv/repos/better-hub/dogfood-output/screenshots/cache-cold-overview-oak-spike-run-1.png
+
+console_file=console-cold-overview-oak-spike-run-1.txt
+console_error_anchor_line=96
+console_errors_summary=readme 404
+---errors---
+[error] %c%s%c GET /repos/shuv1337/oak-spike/readme?ref=main - 404 with id AD52:7348B:A13B7ED:A362BC5:6A3B8FC7 in 704ms background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server  

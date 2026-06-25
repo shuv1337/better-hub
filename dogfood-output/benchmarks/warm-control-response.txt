@@ -1,0 +1,25 @@
+# Step 5 — Manual warm control responses (DOM text captured from /debug/github-cache)
+
+## Preconditions
+- URL: http://127.0.0.1:3000/debug/github-cache
+- Warm lock: open
+- Last Warm: No warm result has been stored
+- Sync Jobs: PENDING 0 / RUNNING 0 / FAILED 0
+
+## Full warm (button click)
+Response message: full warm skipped: disabled
+Last Warm summary: 0/0 warmed
+Warm lock after click: open (unchanged)
+
+## Quick warm (button click)
+Response message: quick warm skipped: disabled
+Last Warm summary: 0/0 warmed
+Warm lock after click: open (unchanged)
+
+## Evidence
+- screenshots/cache-debug-warmer-before.png
+- screenshots/cache-debug-warmer-after-click.png
+- screenshots/cache-debug-warmer-quick-warm.png
+
+## Note
+No network warm job was enqueued. Post-remeasure rows (steady-state-remeasure) reflect navigation-driven cache population only, not debug warming.

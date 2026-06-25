@@ -1,0 +1,9 @@
+# DEPRECATED: Misleading "HTTP cold" label. Use http-post-cold-visit-oak-spike.txt instead.
+# This file is preserved for audit trail only; content matches the post-cold-visit capture.
+=== HTTP post-cold-visit: http://127.0.0.1:3000/shuv1337/oak-spike ===
+status=200
+redirect=
+time_total=0.685024
+time_starttransfer=0.634400
+size_download=780774
+<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><link rel="preload" as="image" href="https://avatars.githubusercontent.
