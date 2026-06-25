@@ -1,9 +1,5 @@
 "use client";
 
-import { useState, useTransition, useOptimistic, useCallback } from "react";
-import Link from "next/link";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
 import {
 	ArrowLeft,
 	Sparkles,
@@ -18,12 +14,11 @@ import {
 	Ghost,
 	CornerDownLeft,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { ClientMarkdown } from "@/components/shared/client-markdown";
-import { MarkdownEditor } from "@/components/shared/markdown-editor";
-import { TimeAgo } from "@/components/ui/time-ago";
-import { useMutationEvents } from "@/components/shared/mutation-event-provider";
-import { useGlobalChat } from "@/components/shared/global-chat-provider";
+import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition, useOptimistic, useCallback } from "react";
+
 import {
 	closePromptRequest,
 	reopenPromptRequest,
@@ -32,12 +27,19 @@ import {
 	addPromptComment,
 	deletePromptComment,
 } from "@/app/(app)/repos/[owner]/[repo]/prompts/actions";
+import { ClientMarkdown } from "@/components/shared/client-markdown";
+import { useGlobalChat } from "@/components/shared/global-chat-provider";
+import { MarkdownEditor } from "@/components/shared/markdown-editor";
+import { useMutationEvents } from "@/components/shared/mutation-event-provider";
+import { TimeAgo } from "@/components/ui/time-ago";
 import type {
 	PromptRequest,
 	PromptRequestStatus,
 	PromptRequestComment,
 	PromptRequestReaction,
 } from "@/lib/prompt-request-store";
+import { cn } from "@/lib/utils";
+
 import { PromptReactionDisplay } from "./prompt-reaction-display";
 
 const statusColors: Record<PromptRequestStatus, string> = {
@@ -118,7 +120,7 @@ export function PromptDetail({
 		startCommentTransition(async () => {
 			addOptimisticComment({ type: "add", comment: optimistic });
 			try {
-				await addPromptComment(promptRequest.id, body);
+				await addPromptComment(owner, repo, promptRequest.id, body);
 			} catch {
 				// revalidation from server action will restore correct state
 			}
@@ -129,7 +131,7 @@ export function PromptDetail({
 		startCommentTransition(async () => {
 			addOptimisticComment({ type: "delete", id: commentId });
 			try {
-				await deletePromptComment(commentId, promptRequest.id);
+				await deletePromptComment(owner, repo, commentId, promptRequest.id);
 			} catch {
 				// revalidation from server action will restore correct state
 			}
@@ -139,7 +141,7 @@ export function PromptDetail({
 	const handleClose = async () => {
 		setIsClosing(true);
 		try {
-			await closePromptRequest(promptRequest.id);
+			await closePromptRequest(owner, repo, promptRequest.id);
 			emit({ type: "prompt:closed", owner, repo });
 			router.refresh();
 		} catch {
@@ -150,7 +152,7 @@ export function PromptDetail({
 	const handleReopen = async () => {
 		setIsReopening(true);
 		try {
-			await reopenPromptRequest(promptRequest.id);
+			await reopenPromptRequest(owner, repo, promptRequest.id);
 			emit({ type: "prompt:reopened", owner, repo });
 			router.refresh();
 		} catch {
@@ -162,7 +164,7 @@ export function PromptDetail({
 		if (!confirm("Delete this prompt request?")) return;
 		setIsDeleting(true);
 		try {
-			await deletePromptRequestAction(promptRequest.id);
+			await deletePromptRequestAction(owner, repo, promptRequest.id);
 			emit({ type: "prompt:deleted", owner, repo });
 			router.push(`/${owner}/${repo}/prompts`);
 		} catch {
@@ -174,7 +176,7 @@ export function PromptDetail({
 		if (promptRequest.status === "open" && isMaintainer) {
 			setIsAccepting(true);
 			try {
-				await acceptPromptRequestAction(promptRequest.id);
+				await acceptPromptRequestAction(owner, repo, promptRequest.id);
 				emit({ type: "prompt:accepted", owner, repo });
 				router.refresh();
 			} catch {
@@ -198,7 +200,7 @@ export function PromptDetail({
 		if (promptRequest.status === "open") {
 			setIsAccepting(true);
 			try {
-				await acceptPromptRequestAction(promptRequest.id);
+				await acceptPromptRequestAction(owner, repo, promptRequest.id);
 				emit({ type: "prompt:accepted", owner, repo });
 				router.refresh();
 			} catch {
@@ -284,6 +286,8 @@ export function PromptDetail({
 
 					{/* Reactions */}
 					<PromptReactionDisplay
+						owner={owner}
+						repo={repo}
 						promptRequestId={promptRequest.id}
 						reactions={reactions}
 						currentUserId={currentUser?.id ?? null}

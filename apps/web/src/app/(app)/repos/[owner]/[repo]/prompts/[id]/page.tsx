@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+
+import { PromptDetail } from "@/components/prompt-request/prompt-detail";
+import { getServerSession } from "@/lib/auth";
+import { getOctokit, extractRepoPermissions } from "@/lib/github";
 import {
-	getPromptRequest,
+	getPromptRequestForRepo,
 	listPromptRequestComments,
 	listPromptRequestReactions,
 } from "@/lib/prompt-request-store";
-import { PromptDetail } from "@/components/prompt-request/prompt-detail";
-import { notFound } from "next/navigation";
-import { getServerSession } from "@/lib/auth";
-import { getOctokit, extractRepoPermissions, getRepo } from "@/lib/github";
 
 export async function generateMetadata({
 	params,
@@ -15,18 +16,20 @@ export async function generateMetadata({
 	params: Promise<{ owner: string; repo: string; id: string }>;
 }): Promise<Metadata> {
 	const { owner, repo, id } = await params;
+	const fallbackTitle = { title: `Prompt · ${owner}/${repo}` };
 
-	const repoData = await getRepo(owner, repo);
-	const isPrivate = !repoData || repoData.private === true;
+	const octokit = await getOctokit();
+	if (!octokit) return fallbackTitle;
 
-	if (isPrivate) {
-		return { title: `Prompt · ${owner}/${repo}` };
+	try {
+		const { data: repoData } = await octokit.repos.get({ owner, repo });
+		if (repoData.private) return fallbackTitle;
+	} catch {
+		return fallbackTitle;
 	}
 
-	const promptRequest = await getPromptRequest(id);
-	if (!promptRequest) {
-		return { title: `Prompt · ${owner}/${repo}` };
-	}
+	const promptRequest = await getPromptRequestForRepo(id, owner, repo);
+	if (!promptRequest) return fallbackTitle;
 	return { title: `${promptRequest.title} · ${owner}/${repo}` };
 }
 
@@ -36,16 +39,29 @@ export default async function PromptDetailPage({
 	params: Promise<{ owner: string; repo: string; id: string }>;
 }) {
 	const { owner, repo, id } = await params;
-	const [promptRequest, comments, reactions, session] = await Promise.all([
-		getPromptRequest(id),
-		listPromptRequestComments(id),
-		listPromptRequestReactions(id),
-		getServerSession(),
-	]);
+	const session = await getServerSession();
 
+	const octokit = await getOctokit();
+	if (!octokit) {
+		notFound();
+	}
+
+	let repoData;
+	try {
+		({ data: repoData } = await octokit.repos.get({ owner, repo }));
+	} catch {
+		notFound();
+	}
+
+	const promptRequest = await getPromptRequestForRepo(id, owner, repo);
 	if (!promptRequest) {
 		notFound();
 	}
+
+	const [comments, reactions] = await Promise.all([
+		listPromptRequestComments(id),
+		listPromptRequestReactions(id),
+	]);
 
 	const currentUser = session?.user
 		? {
@@ -56,22 +72,12 @@ export default async function PromptDetailPage({
 			}
 		: null;
 
-	// Check repo maintainer permissions (push/admin/maintain)
 	let isMaintainer = false;
 	if (currentUser) {
-		const octokit = await getOctokit();
-		if (octokit) {
-			try {
-				const { data } = await octokit.repos.get({ owner, repo });
-				const perms = extractRepoPermissions(data);
-				isMaintainer = perms.push || perms.admin || perms.maintain;
-			} catch {
-				// If API fails, default to no maintainer access
-			}
-		}
+		const perms = extractRepoPermissions(repoData);
+		isMaintainer = perms.push || perms.admin || perms.maintain;
 	}
 
-	// Author or maintainer can close/reopen/delete
 	const canManage = isMaintainer || currentUser?.id === promptRequest.userId;
 
 	return (

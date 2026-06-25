@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useTransition } from "react";
-import { createPortal } from "react-dom";
+import { SmilePlus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { SmilePlus } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useState, useRef, useEffect, useCallback, useTransition } from "react";
+import { createPortal } from "react-dom";
+
 import { togglePromptReaction } from "@/app/(app)/repos/[owner]/[repo]/prompts/actions";
 import type { PromptRequestReaction, PromptReactionContent } from "@/lib/prompt-request-store";
+import { cn } from "@/lib/utils";
 
 const REACTION_EMOJI: [PromptReactionContent, string][] = [
 	["+1", "👍"],
@@ -21,6 +22,8 @@ const REACTION_EMOJI: [PromptReactionContent, string][] = [
 ];
 
 interface PromptReactionDisplayProps {
+	owner: string;
+	repo: string;
 	promptRequestId: string;
 	reactions: PromptRequestReaction[];
 	currentUserId: string | null;
@@ -147,6 +150,8 @@ function ReactionPicker({
 }
 
 export function PromptReactionDisplay({
+	owner,
+	repo,
 	promptRequestId,
 	reactions,
 	currentUserId,
@@ -212,7 +217,12 @@ export function PromptReactionDisplay({
 
 			startTransition(async () => {
 				try {
-					await togglePromptReaction(promptRequestId, content);
+					await togglePromptReaction(
+						owner,
+						repo,
+						promptRequestId,
+						content,
+					);
 				} catch {
 					setOptimisticReactions(reactions);
 				}
@@ -220,7 +230,15 @@ export function PromptReactionDisplay({
 
 			setShowPicker(false);
 		},
-		[canInteract, currentUserId, optimisticReactions, promptRequestId, reactions],
+		[
+			canInteract,
+			currentUserId,
+			optimisticReactions,
+			owner,
+			repo,
+			promptRequestId,
+			reactions,
+		],
 	);
 
 	const reactionCounts = REACTION_EMOJI.map(([key, emoji]) => {
