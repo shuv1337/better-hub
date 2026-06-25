@@ -41,7 +41,7 @@ import { ChatPageActivator } from "@/components/shared/chat-page-activator";
 import { TrackView } from "@/components/shared/track-view";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { inngest } from "@/lib/inngest";
+import { sendInngestEvent } from "@/lib/inngest";
 import { isItemPinned } from "@/lib/pinned-items-store";
 import { all } from "better-all";
 
@@ -224,7 +224,7 @@ export default async function PRDetailPage({
 
 	// Fire-and-forget: embed PR content for semantic search
 	if (session?.user?.id) {
-		void inngest.send({
+		void sendInngestEvent({
 			name: "app/content.viewed",
 			data: {
 				userId: session.user.id,

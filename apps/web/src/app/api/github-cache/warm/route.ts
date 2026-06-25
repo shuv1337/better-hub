@@ -15,7 +15,7 @@ import {
 	type GithubCacheWarmResult,
 	type GithubCacheWarmRun,
 } from "@/lib/github-cache-warmer";
-import { inngest } from "@/lib/inngest";
+import { sendInngestEvent } from "@/lib/inngest";
 
 const DEFAULT_API_WARM_MAX_REPOS = 100;
 const DEFAULT_API_WARM_CONCURRENCY = 3;
@@ -201,25 +201,22 @@ export async function POST(request: Request) {
 		});
 	}
 
-	try {
-		await inngest.send({
-			name: "github/cache.warm",
-			data: {
-				userId,
-				runId,
-				lockKey,
-				options: parsed.options,
-			},
-		});
-	} catch (error) {
+	const sendResult = await sendInngestEvent({
+		name: "github/cache.warm",
+		data: {
+			userId,
+			runId,
+			lockKey,
+			options: parsed.options,
+		},
+	});
+	if (sendResult.skipped) {
 		await releaseGithubCacheWarmLock(userId, runId);
-		return Response.json(
-			{
-				error: "Failed to queue GitHub cache warm",
-				message: error instanceof Error ? error.message : String(error),
-			},
-			{ status: 500 },
-		);
+		return Response.json({
+			accepted: false,
+			runId,
+			skippedReason: sendResult.reason,
+		});
 	}
 
 	return Response.json({ accepted: true, runId });

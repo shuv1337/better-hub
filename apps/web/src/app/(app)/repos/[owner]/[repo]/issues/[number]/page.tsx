@@ -23,7 +23,7 @@ import { TrackView } from "@/components/shared/track-view";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { inngest } from "@/lib/inngest";
+import { sendInngestEvent } from "@/lib/inngest";
 import { isItemPinned } from "@/lib/pinned-items-store";
 
 export async function generateMetadata({
@@ -107,7 +107,7 @@ export default async function IssueDetailPage({
 
 	// Fire-and-forget: embed issue content for semantic search
 	if (session?.user?.id) {
-		void inngest.send({
+		void sendInngestEvent({
 			name: "app/content.viewed",
 			data: {
 				userId: session.user.id,

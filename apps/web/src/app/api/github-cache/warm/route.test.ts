@@ -44,6 +44,7 @@ const inngestModule = vi.hoisted(() => ({
 	inngest: {
 		send: vi.fn(),
 	},
+	sendInngestEvent: vi.fn(),
 }));
 
 vi.mock("next/headers", () => nextHeaders);
@@ -69,6 +70,8 @@ describe("github cache warm API route", () => {
 		for (const helper of Object.values(githubCacheLock)) helper.mockReset();
 		for (const helper of Object.values(githubCacheWarmer)) helper.mockReset();
 		inngestModule.inngest.send.mockReset();
+		inngestModule.sendInngestEvent.mockReset();
+		inngestModule.sendInngestEvent.mockResolvedValue({ skipped: false });
 		nextHeaders.headers.mockResolvedValue(new Headers());
 		authModule.auth.api.getSession.mockResolvedValue({
 			user: { id: "user-1", role: "admin" },
@@ -90,13 +93,22 @@ describe("github cache warm API route", () => {
 
 	it("explicitly releases the API-owned lock when Inngest enqueue fails", async () => {
 		emitRandomUuid("run-1");
-		ingestSendFailure(new Error("network down"));
+		inngestModule.sendInngestEvent.mockResolvedValue({
+			skipped: true,
+			reason: "send-failed",
+		});
 
 		const { POST } = await import("./route");
 		const response = await POST(warmRequest({ mode: "quick", maxRepos: 5 }));
+		const body = await response.json();
 
-		expect(response.status).toBe(500);
-		expect(inngestModule.inngest.send).toHaveBeenCalledWith({
+		expect(response.status).toBe(200);
+		expect(body).toMatchObject({
+			accepted: false,
+			runId: "run-1",
+			skippedReason: "send-failed",
+		});
+		expect(inngestModule.sendInngestEvent).toHaveBeenCalledWith({
 			name: "github/cache.warm",
 			data: {
 				userId: "user-1",
@@ -121,7 +133,7 @@ describe("github cache warm API route", () => {
 
 		expect(response.status).toBe(403);
 		expect(githubCacheLock.acquireGithubCacheWarmLock).not.toHaveBeenCalled();
-		expect(inngestModule.inngest.send).not.toHaveBeenCalled();
+		expect(inngestModule.sendInngestEvent).not.toHaveBeenCalled();
 	});
 
 	it("returns actionable disabled guidance when no warm path is enabled", async () => {
@@ -152,7 +164,6 @@ describe("github cache warm API route", () => {
 		emitRandomUuid("run-2");
 		vi.stubEnv("NODE_ENV", "development");
 		vi.stubEnv("GITHUB_CACHE_WARM_INLINE", "0");
-		inngestModule.inngest.send.mockResolvedValue({});
 
 		const { POST } = await import("./route");
 		const response = await POST(warmRequest({ mode: "quick", maxRepos: 5 }));
@@ -160,7 +171,7 @@ describe("github cache warm API route", () => {
 		expect(response.status).toBe(200);
 		expect(githubAuthContext.resolveGitHubAuthContextForUser).not.toHaveBeenCalled();
 		expect(githubCacheWarmer.warmPersonalGithubCache).not.toHaveBeenCalled();
-		expect(inngestModule.inngest.send).toHaveBeenCalledWith(
+		expect(inngestModule.sendInngestEvent).toHaveBeenCalledWith(
 			expect.objectContaining({
 				name: "github/cache.warm",
 				data: expect.objectContaining({ runId: "run-2" }),
@@ -206,8 +217,4 @@ describe("github cache warm API route", () => {
 
 function emitRandomUuid(runId: string) {
 	vi.spyOn(crypto, "randomUUID").mockReturnValue(runId as never);
-}
-
-function ingestSendFailure(error: Error) {
-	inngestModule.inngest.send.mockRejectedValue(error);
 }

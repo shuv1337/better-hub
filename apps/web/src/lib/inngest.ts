@@ -25,6 +25,26 @@ import {
 
 export const inngest = new Inngest({ id: "better-github" });
 
+let warnedMissingEventKey = false;
+
+export async function sendInngestEvent(event: Parameters<typeof inngest.send>[0]) {
+	if (!process.env.INNGEST_EVENT_KEY) {
+		if (!warnedMissingEventKey) {
+			warnedMissingEventKey = true;
+			console.warn("[inngest] skipped event send; INNGEST_EVENT_KEY is not set");
+		}
+		return { skipped: true as const, reason: "missing-event-key" };
+	}
+
+	try {
+		await inngest.send(event);
+		return { skipped: false as const };
+	} catch (error) {
+		console.error("[inngest] failed to send event", error);
+		return { skipped: true as const, reason: "send-failed" };
+	}
+}
+
 export interface GithubCacheWarmEventData {
 	userId: string;
 	runId: string;
