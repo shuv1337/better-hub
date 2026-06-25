@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const promptStore = vi.hoisted(() => ({
 	getPromptRequestForRepo: vi.fn(),
+	listPromptRequests: vi.fn(),
 	listPromptRequestComments: vi.fn(),
 	listPromptRequestReactions: vi.fn(),
 }));
@@ -57,6 +58,45 @@ function mockOctokitWithRepoAccess() {
 	});
 	return reposGet;
 }
+
+describe("prompt list page access", () => {
+	beforeEach(() => {
+		for (const fn of Object.values(promptStore)) fn.mockReset();
+		githubModule.getOctokit.mockReset();
+		navigation.notFound.mockClear();
+
+		promptStore.listPromptRequests.mockResolvedValue([mockPrompt]);
+		mockOctokitWithRepoAccess();
+	});
+
+	it("returns notFound when viewer cannot access route repo", async () => {
+		githubModule.getOctokit.mockResolvedValue({
+			repos: { get: vi.fn().mockRejectedValue(new Error("404")) },
+		});
+
+		const { default: PromptsPage } = await import("./page");
+
+		await expect(
+			PromptsPage({
+				params: Promise.resolve({ owner: "ownerA", repo: "repoA" }),
+			}),
+		).rejects.toThrow("NOT_FOUND");
+
+		expect(promptStore.listPromptRequests).not.toHaveBeenCalled();
+	});
+
+	it("loads prompts after live repo access check succeeds", async () => {
+		const { default: PromptsPage } = await import("./page");
+
+		const result = await PromptsPage({
+			params: Promise.resolve({ owner: "ownerA", repo: "repoA" }),
+		});
+
+		expect(navigation.notFound).not.toHaveBeenCalled();
+		expect(promptStore.listPromptRequests).toHaveBeenCalledWith("ownerA", "repoA");
+		expect(result).toBeTruthy();
+	});
+});
 
 describe("prompt detail page access", () => {
 	beforeEach(() => {
