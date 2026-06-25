@@ -15,6 +15,10 @@ dist
 # testing
 coverage
 
+# local browser auth artifacts
+dogfood-output/agent-browser-headless.json
+dogfood-output/auth-state.json
+
 # misc
 .DS_Store
 *.pem
