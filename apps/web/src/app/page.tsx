@@ -22,20 +22,7 @@ export default async function HomePage({
 	}
 
 	return (
-		<div
-			className="relative min-h-screen bg-background overflow-x-hidden"
-			style={
-				{
-					"--background": "#030304",
-					"--foreground": "#fafafa",
-					"--shader-bg": "#09090b",
-					"--shader-filter": "none",
-					"--hero-border": "#27272a",
-					"--border": "#27272a",
-					colorScheme: "dark",
-				} as React.CSSProperties
-			}
-		>
+		<div className="relative min-h-screen bg-background overflow-x-hidden">
 			{/* Shader — full screen */}
 			<div
 				className="absolute inset-0 overflow-hidden"
@@ -53,7 +40,7 @@ export default async function HomePage({
 			</div>
 
 			<style>{`
-				html, body { background: #030304; }
+				html, body { background: var(--background); }
 				@keyframes heroFadeUp {
 					from { opacity: 0; transform: translateY(12px); filter: blur(4px); }
 					to { opacity: 1; transform: translateY(0); filter: blur(0px); }
@@ -85,8 +72,11 @@ export default async function HomePage({
 							y2="55.8601"
 							gradientUnits="userSpaceOnUse"
 						>
-							<stop stopColor="white" />
-							<stop offset="1" stopColor="#999999" />
+							<stop stopColor="var(--primary)" />
+							<stop
+								offset="1"
+								stopColor="var(--muted-foreground)"
+							/>
 						</linearGradient>
 					</defs>
 				</svg>
@@ -104,9 +94,7 @@ export default async function HomePage({
 						style={{ animationDelay: "0.4s" }}
 					>
 						Re-imagining{" "}
-						<span className="text-white/80 font-mono">
-							code
-						</span>
+						<span className="text-primary font-mono">code</span>
 						<br />
 						collaboration.
 					</h1>

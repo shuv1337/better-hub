@@ -11,6 +11,9 @@ interface ThemeScriptData {
  * For marketplace (mp:) themes, reads cached color data from localStorage.
  */
 export function generateThemeScript(themes: ThemeDefinition[]): string {
+	const defaultThemeId = process.env.NEXT_PUBLIC_DEFAULT_THEME_ID ?? "better-auth";
+	const defaultMode =
+		process.env.NEXT_PUBLIC_DEFAULT_COLOR_MODE === "light" ? "light" : "dark";
 	const data: Record<string, ThemeScriptData> = {};
 	for (const t of themes) {
 		data[t.id] = {
@@ -35,12 +38,12 @@ export function generateThemeScript(themes: ThemeDefinition[]): string {
 		`var mode=localStorage.getItem("color-mode");`,
 		// Legacy migration
 		`if(id&&legacy[id]){var m=legacy[id];id=m.themeId;mode=m.mode;localStorage.setItem("color-theme",id);localStorage.setItem("color-mode",mode)}`,
-		`if(!id)id="hub";`,
-		`if(!mode){var prefersDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;mode=prefersDark?"dark":"light";localStorage.setItem("color-mode",mode)}`,
+		`if(!id)id=${JSON.stringify(defaultThemeId)};`,
+		`if(!mode){mode=${JSON.stringify(defaultMode)};localStorage.setItem("color-mode",mode)}`,
 		// Resolve theme data — for mp: themes, read the cached color data from localStorage
 		`var t=themes[id];`,
 		`if(!t&&id.indexOf("mp:")===0){try{var raw=localStorage.getItem("mp-theme-data");if(raw)t=JSON.parse(raw)}catch(e){}}`,
-		`if(!t)t=themes["hub"];`,
+		`if(!t)t=themes[${JSON.stringify(defaultThemeId)}]||themes["better-auth"];`,
 		`if(!t)return;`,
 		// Apply mode class & color scheme
 		`var v=t[mode];if(!v)v=t.dark;`,
@@ -49,7 +52,7 @@ export function generateThemeScript(themes: ThemeDefinition[]): string {
 		`localStorage.setItem("theme",mode);`,
 		// Apply CSS variables (skip for default dark to use stylesheet defaults)
 		`var hslRe=/^\\d+(\\.\\d+)?\\s+\\d+(\\.\\d+)?%\\s+\\d+(\\.\\d+)?%/;`,
-		`if(!(id==="hub"&&mode==="dark")){for(var k in v.colors){var cv=v.colors[k];d.style.setProperty(k,hslRe.test(cv)?"hsl("+cv+")":cv)}}`,
+		`if(!(id==="better-auth"&&mode==="dark")){for(var k in v.colors){var cv=v.colors[k];d.style.setProperty(k,hslRe.test(cv)?"hsl("+cv+")":cv)}}`,
 		"}catch(e){}})()",
 	].join("");
 }

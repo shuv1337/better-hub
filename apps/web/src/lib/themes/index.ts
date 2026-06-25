@@ -4,6 +4,7 @@ import {
 	cloudflare,
 	ember,
 	forest,
+	betterHubLocalTheme,
 	betterAuthTheme,
 	mintlify,
 	noir,
@@ -22,6 +23,7 @@ import {
 } from "./themes";
 
 const themes: ThemeDefinition[] = [
+	betterHubLocalTheme,
 	betterAuthTheme,
 	vercel,
 	cloudflare,
@@ -46,8 +48,9 @@ export type { ThemeColors, ThemeDefinition, ThemeVariant, ShikiTheme };
 
 export const STORAGE_KEY = "color-theme";
 export const MODE_KEY = "color-mode";
-export const DEFAULT_THEME_ID = "better-auth";
-export const DEFAULT_MODE: "dark" | "light" = "dark";
+export const DEFAULT_THEME_ID = process.env.NEXT_PUBLIC_DEFAULT_THEME_ID ?? "better-auth";
+export const DEFAULT_MODE: "dark" | "light" =
+	process.env.NEXT_PUBLIC_DEFAULT_COLOR_MODE === "light" ? "light" : "dark";
 
 const themeMap = new Map(themes.map((t) => [t.id, t]));
 
@@ -108,7 +111,7 @@ export function applyTheme(themeId: string, mode: "dark" | "light"): void {
 	const hubDark = betterAuthTheme.dark;
 	const allKeys = Object.keys(hubDark.colors) as (keyof ThemeColors)[];
 
-	if (!variant || (themeId === DEFAULT_THEME_ID && mode === DEFAULT_MODE)) {
+	if (!variant || (themeId === "better-auth" && mode === "dark")) {
 		for (const key of allKeys) {
 			el.style.removeProperty(key);
 		}
