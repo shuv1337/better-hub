@@ -1,5 +1,20 @@
 import { Octokit } from "@octokit/rest";
 import { cache } from "react";
+
+import { computeContributorScore } from "./contributor-score";
+import { getRequestGitHubAuthContext, type GitHubAuthContext } from "./github-auth-context";
+import { runGithubBackgroundTask } from "./github-background";
+import {
+	getGithubCacheDescriptor,
+	githubCacheKeyPart,
+	githubCacheKeys,
+	normalizeGithubRepoKey,
+} from "./github-cache-descriptors";
+import {
+	isShareableCacheType,
+	isSharedCacheReadEnabled,
+	shouldRefresh,
+} from "./github-cache-policy";
 import {
 	claimDueGithubSyncJobs,
 	deleteGithubCacheByPrefix,
@@ -15,20 +30,7 @@ import {
 	upsertSharedCacheEntry,
 } from "./github-sync-store";
 import { redis } from "./redis";
-import { computeContributorScore } from "./contributor-score";
 import { getCachedAuthorDossier, setCachedAuthorDossier } from "./repo-data-cache";
-import {
-	getGithubCacheDescriptor,
-	githubCacheKeyPart,
-	githubCacheKeys,
-	normalizeGithubRepoKey,
-} from "./github-cache-descriptors";
-import { getRequestGitHubAuthContext, type GitHubAuthContext } from "./github-auth-context";
-import {
-	isShareableCacheType,
-	isSharedCacheReadEnabled,
-	shouldRefresh,
-} from "./github-cache-policy";
 
 export type RepoPermissions = {
 	admin: boolean;
@@ -2421,16 +2423,18 @@ function triggerGitDataSyncDrain(authCtx: GitHubAuthContext) {
 	if (githubSyncDrainingUsers.has(authCtx.userId)) return;
 
 	githubSyncDrainingUsers.add(authCtx.userId);
-	void (async () => {
-		try {
-			for (let round = 0; round < 3; round++) {
-				const processed = await drainGitDataSyncQueue(authCtx, 4);
-				if (processed === 0) break;
+	runGithubBackgroundTask(
+		(async () => {
+			try {
+				for (let round = 0; round < 3; round++) {
+					const processed = await drainGitDataSyncQueue(authCtx, 4);
+					if (processed === 0) break;
+				}
+			} finally {
+				githubSyncDrainingUsers.delete(authCtx.userId);
 			}
-		} finally {
-			githubSyncDrainingUsers.delete(authCtx.userId);
-		}
-	})();
+		})(),
+	);
 }
 
 async function enqueueGitDataSync(
@@ -7029,17 +7033,19 @@ function scheduleRepoPageDataRefresh(
 	owner: string,
 	repo: string,
 ): void {
-	void (async () => {
-		const { tryAcquireRepoPageRefreshLock } = await import("@/lib/repo-data-cache");
-		const acquired = await tryAcquireRepoPageRefreshLock(authCtx.userId, owner, repo);
-		if (!acquired) return;
-		await fetchAndCacheRepoPageDataWithAuth(authCtx, owner, repo);
-	})().catch((error) => {
-		console.error(
-			`[getRepoPageData] Background refresh failed for ${owner}/${repo}:`,
-			error,
-		);
-	});
+	runGithubBackgroundTask(
+		(async () => {
+			const { tryAcquireRepoPageRefreshLock } =
+				await import("@/lib/repo-data-cache");
+			const acquired = await tryAcquireRepoPageRefreshLock(
+				authCtx.userId,
+				owner,
+				repo,
+			);
+			if (!acquired) return;
+			await fetchAndCacheRepoPageDataWithAuth(authCtx, owner, repo);
+		})(),
+	);
 }
 
 export async function fetchAndCacheRepoPageDataWithAuth(
