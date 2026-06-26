@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const github = vi.hoisted(() => ({
 	fetchCheckStatusForRef: vi.fn(),
+	fetchRepoReadmeMarkdownFromGitHub: vi.fn(),
 	getCommitActivity: vi.fn(),
 	getOctokit: vi.fn(),
 	getRepoBranches: vi.fn(),
@@ -150,13 +151,13 @@ describe("repo overview cache warmer helpers", () => {
 		expect(repoDataCache.setCachedRepoTree).toHaveBeenCalledWith("Owner", "Repo", tree);
 	});
 
-	it("deletes cached README HTML when a forced refresh gets a definitive 404", async () => {
+	it("deletes cached README HTML when a forced refresh finds no README file", async () => {
 		readmeCache.getCachedReadmeHtml.mockResolvedValue("<h1>Old</h1>");
-		const getReadme = vi.fn().mockRejectedValue({ status: 404 });
+		github.fetchRepoReadmeMarkdownFromGitHub.mockResolvedValue(null);
 		const authCtx = {
 			userId: "user-1",
 			token: "token",
-			octokit: { repos: { getReadme } },
+			octokit: {},
 			forceRefresh: false,
 		};
 
@@ -168,6 +169,12 @@ describe("repo overview cache warmer helpers", () => {
 				forceRefresh: true,
 			}),
 		).resolves.toBeNull();
+		expect(github.fetchRepoReadmeMarkdownFromGitHub).toHaveBeenCalledWith(
+			authCtx.octokit,
+			"Owner",
+			"Repo",
+			"main",
+		);
 		expect(readmeCache.deleteCachedReadmeHtml).toHaveBeenCalledWith("Owner", "Repo");
 		expect(readmeCache.setCachedReadmeHtml).not.toHaveBeenCalled();
 	});
@@ -175,11 +182,11 @@ describe("repo overview cache warmer helpers", () => {
 	it("releases the README background refresh lock after transient refresh failure", async () => {
 		readmeCache.getCachedReadmeHtml.mockResolvedValue("<h1>Cached</h1>");
 		redis.set.mockResolvedValue("OK");
-		const getReadme = vi.fn().mockRejectedValue({ status: 503 });
+		github.fetchRepoReadmeMarkdownFromGitHub.mockRejectedValue({ status: 503 });
 		const authCtx = {
 			userId: "user-1",
 			token: "token",
-			octokit: { repos: { getReadme } },
+			octokit: {},
 			forceRefresh: false,
 		};
 		vi.spyOn(console, "error").mockImplementation(() => {});

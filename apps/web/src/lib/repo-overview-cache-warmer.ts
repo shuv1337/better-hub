@@ -9,6 +9,7 @@ import {
 	getRepoEvents,
 	getRepoIssues,
 	getRepoPullRequests,
+	fetchRepoReadmeMarkdownFromGitHub,
 	getRepoReadme,
 	getRepoTags,
 	getRepoTree,
@@ -94,14 +95,6 @@ class RepoReadmeNotFoundError extends Error {
 	}
 }
 
-function isNotFoundError(error: unknown): boolean {
-	return (
-		typeof error === "object" &&
-		error !== null &&
-		(error as { status?: unknown }).status === 404
-	);
-}
-
 async function tryAcquireReadmeRefreshLock(owner: string, repo: string): Promise<boolean> {
 	const result = await redis.set(readmeRefreshLockKey(owner, repo), "1", {
 		ex: README_REFRESH_LOCK_TTL_SECONDS,
@@ -119,10 +112,16 @@ async function fetchReadmeMarkdownFromGitHub(
 	const octokit = authCtx?.octokit ?? (await getOctokit());
 	if (!octokit) return null;
 	try {
-		const { data } = await octokit.repos.getReadme({ owner, repo, ref: branch });
-		return Buffer.from(data.content, "base64").toString("utf-8");
+		const content = await fetchRepoReadmeMarkdownFromGitHub(
+			octokit,
+			owner,
+			repo,
+			branch,
+		);
+		if (content === null) throw new RepoReadmeNotFoundError();
+		return content;
 	} catch (error) {
-		if (isNotFoundError(error)) throw new RepoReadmeNotFoundError();
+		if (error instanceof RepoReadmeNotFoundError) throw error;
 		return null;
 	}
 }

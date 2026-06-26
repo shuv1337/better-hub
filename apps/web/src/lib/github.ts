@@ -596,9 +596,20 @@ async function fetchRepoReadmeFromGitHub(
 		if (Array.isArray(data) || data.type !== "file") return null;
 		const content = Buffer.from(data.content, "base64").toString("utf-8");
 		return { ...data, content };
-	} catch {
-		return null;
+	} catch (error) {
+		if (isOctokitNotFound(error)) return null;
+		throw error;
 	}
+}
+
+export async function fetchRepoReadmeMarkdownFromGitHub(
+	octokit: Octokit,
+	owner: string,
+	repo: string,
+	ref?: string,
+): Promise<string | null> {
+	const readme = await fetchRepoReadmeFromGitHub(octokit, owner, repo, ref);
+	return readme?.content ?? null;
 }
 
 async function fetchUserOrgsFromGitHub(octokit: Octokit, perPage: number) {
@@ -2093,49 +2104,13 @@ async function processGitDataSyncJob(
 		case "repo_readme": {
 			const ref = normalizeRef(payload.ref);
 			const rdKey = buildRepoReadmeCacheKey(owner, repo, ref);
-			const rdCached = await getGithubCacheEntry(authCtx.userId, rdKey);
-			const rdPath = `/repos/${owner}/${repo}/readme${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`;
-			try {
-				const rdRes = await ghConditionalGet(
-					authCtx.token,
-					rdPath,
-					rdCached?.etag ?? null,
-				);
-				if (rdRes.notModified) {
-					await touchCacheWithShared(
-						authCtx.userId,
-						rdKey,
-						"repo_readme",
-					);
-				} else {
-					const rdData = rdRes.data as {
-						content: string;
-						[key: string]: unknown;
-					};
-					const content = Buffer.from(
-						rdData.content,
-						"base64",
-					).toString("utf-8");
-					await upsertCacheWithShared(
-						authCtx.userId,
-						rdKey,
-						"repo_readme",
-						{ ...rdData, content },
-						rdRes.etag,
-					);
-				}
-			} catch (e: unknown) {
-				if (isOctokitNotFound(e)) {
-					await upsertCacheWithShared(
-						authCtx.userId,
-						rdKey,
-						"repo_readme",
-						null,
-					);
-					return;
-				}
-				throw e;
-			}
+			const readme = await fetchRepoReadmeFromGitHub(
+				authCtx.octokit,
+				owner,
+				repo,
+				ref || undefined,
+			);
+			await upsertCacheWithShared(authCtx.userId, rdKey, "repo_readme", readme);
 			return;
 		}
 		case "repo_issues": {
