@@ -30,6 +30,18 @@ const githubCacheWarmer = vi.hoisted(() => ({
 	warmPersonalGithubCache: vi.fn(),
 }));
 
+vi.mock("inngest", () => ({
+	Inngest: vi.fn(
+		function (this: {
+			send: ReturnType<typeof vi.fn>;
+			createFunction: ReturnType<typeof vi.fn>;
+		}) {
+			this.send = vi.fn();
+			this.createFunction = vi.fn();
+		},
+	),
+}));
+
 vi.mock("@/lib/github-auth-context", () => githubAuthContext);
 vi.mock("@/lib/github-cache-lock", () => githubCacheLock);
 vi.mock("@/lib/github-cache-warmer", () => githubCacheWarmer);

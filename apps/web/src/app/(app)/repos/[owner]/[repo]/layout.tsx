@@ -1,18 +1,22 @@
-import { getRepoPageData, getRepoTree, prefetchPRData, getForkSyncStatus } from "@/lib/github";
-import { countPromptRequests } from "@/lib/prompt-request-store";
-import { buildFileTree, type FileTreeNode } from "@/lib/file-tree";
-import { RepoSidebar } from "@/components/repo/repo-sidebar";
-import { RepoNav } from "@/components/repo/repo-nav";
-import { ForkSyncButton } from "@/components/repo/fork-sync-button";
-import { CodeContentWrapper } from "@/components/repo/code-content-wrapper";
-import { RepoLayoutWrapper } from "@/components/repo/repo-layout-wrapper";
-import { ChatPageActivator } from "@/components/shared/chat-page-activator";
-import { RepoRevalidator } from "@/components/repo/repo-revalidator";
+import { waitUntil } from "@vercel/functions";
+import { ExternalLink, ShieldAlert, AlertCircle } from "lucide-react";
 import { cookies, headers } from "next/headers";
+
+import { CodeContentWrapper } from "@/components/repo/code-content-wrapper";
+import { ForkSyncButton } from "@/components/repo/fork-sync-button";
+import { RepoLayoutWrapper } from "@/components/repo/repo-layout-wrapper";
+import { RepoNav } from "@/components/repo/repo-nav";
+import { RepoRevalidator } from "@/components/repo/repo-revalidator";
+import { RepoSidebar } from "@/components/repo/repo-sidebar";
 import {
 	REPO_SIDEBAR_COOKIE,
 	type RepoSidebarState,
 } from "@/components/repo/repo-sidebar-constants";
+import { ChatPageActivator } from "@/components/shared/chat-page-activator";
+import { buildFileTree, type FileTreeNode } from "@/lib/file-tree";
+import { getRepoPageData, getRepoTree, prefetchPRData, getForkSyncStatus } from "@/lib/github";
+import { countPromptRequests } from "@/lib/prompt-request-store";
+import { setCachedRepoTree } from "@/lib/repo-data-cache";
 import {
 	getCachedContributorAvatars,
 	getCachedRepoLanguages,
@@ -20,9 +24,6 @@ import {
 	getCachedTags,
 	getCachedRepoTree,
 } from "@/lib/repo-data-cache-vc";
-import { setCachedRepoTree } from "@/lib/repo-data-cache";
-import { waitUntil } from "@vercel/functions";
-import { ExternalLink, ShieldAlert, AlertCircle } from "lucide-react";
 
 function RepoErrorPage({ owner, repo, error }: { owner: string; repo: string; error: string }) {
 	const githubUrl = `https://github.com/${owner}/${repo}`;
@@ -101,7 +102,11 @@ export default async function RepoLayout({
 }) {
 	const { owner, repo: repoName } = await params;
 
-	const pageDataPromise = getRepoPageData(owner, repoName);
+	const pageDataResult = await getRepoPageData(owner, repoName);
+	if (!pageDataResult.success) {
+		return <RepoErrorPage owner={owner} repo={repoName} error={pageDataResult.error} />;
+	}
+
 	const cachePromise = Promise.all([
 		getCachedRepoTree<FileTreeNode[]>(owner, repoName),
 		getCachedContributorAvatars(owner, repoName),
@@ -110,11 +115,6 @@ export default async function RepoLayout({
 		getCachedTags(owner, repoName),
 	]);
 	const promptCountPromise = countPromptRequests(owner, repoName, "open");
-
-	const pageDataResult = await pageDataPromise;
-	if (!pageDataResult.success) {
-		return <RepoErrorPage owner={owner} repo={repoName} error={pageDataResult.error} />;
-	}
 
 	const {
 		repoData,

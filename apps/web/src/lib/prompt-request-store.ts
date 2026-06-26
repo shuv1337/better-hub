@@ -91,6 +91,17 @@ export async function getPromptRequest(id: string): Promise<PromptRequest | null
 	return row ? toPromptRequest(row) : null;
 }
 
+export async function getPromptRequestForRepo(
+	id: string,
+	owner: string,
+	repo: string,
+): Promise<PromptRequest | null> {
+	const row = await prisma.promptRequest.findFirst({
+		where: { id, owner, repo },
+	});
+	return row ? toPromptRequest(row) : null;
+}
+
 export async function listPromptRequests(
 	owner: string,
 	repo: string,

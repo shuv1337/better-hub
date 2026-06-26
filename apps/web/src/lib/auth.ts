@@ -1,31 +1,17 @@
+import { dash, sentinel } from "@better-auth/infra";
+import { stripe } from "@better-auth/stripe";
+import { all } from "better-all";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { prisma } from "./db";
-import { Octokit } from "@octokit/rest";
-import { redis } from "./redis";
-import { waitUntil } from "@vercel/functions";
-import { all } from "better-all";
+import { admin, oAuthProxy } from "better-auth/plugins";
 import { headers } from "next/headers";
 import { cache } from "react";
-import { dash, sentinel } from "@better-auth/infra";
-import { createHash } from "@better-auth/utils/hash";
-import { admin, oAuthProxy } from "better-auth/plugins";
-import { stripe } from "@better-auth/stripe";
-import { getStripeClient, isStripeEnabled } from "./billing/stripe";
-import { grantSignupCredits } from "./billing/credit";
-import { patSignIn } from "./auth-plugins/pat-signin";
 
-async function getOctokitUser(token: string) {
-	const cached = await redis.get<ReturnType<(typeof octokit)["users"]["getAuthenticated"]>>(
-		`github_user:${token}`,
-	);
-	if (cached) return cached;
-	const octokit = new Octokit({ auth: token });
-	const githubUser = await octokit.users.getAuthenticated();
-	const hash = await createHash("SHA-256", "base64").digest(token);
-	waitUntil(redis.set(`github_user:${hash}`, JSON.stringify(githubUser.data), { ex: 3600 }));
-	return githubUser;
-}
+import { patSignIn } from "./auth-plugins/pat-signin";
+import { grantSignupCredits } from "./billing/credit";
+import { getStripeClient, isStripeEnabled } from "./billing/stripe";
+import { prisma } from "./db";
+import { getOctokitUserData } from "./github-user-cache";
 
 export const auth = betterAuth({
 	appName: "Better Hub",
@@ -157,8 +143,7 @@ export const getServerSession = cache(async () => {
 		}
 		let githubUserData: Record<string, unknown> | null = null;
 		try {
-			const githubUser = await getOctokitUser(account.accessToken);
-			githubUserData = githubUser?.data ?? null;
+			githubUserData = await getOctokitUserData(account.accessToken);
 		} catch {
 			// GitHub API may be rate-limited; don't treat as unauthenticated.
 		}
